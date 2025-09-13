@@ -1,0 +1,28 @@
+[project]
+name = "rag-opt"
+version = "0.1.0"
+description = "RAG workflow Optimizer based on Bayesian Optimization"
+authors = [
+    {name = "abdelrahman abounida", email = "abdelrahmanaboneda@gmail.com"},
+]
+dependencies = ["langchain-community>=0.3.21", "langchain>=0.3.27", "unstructured>=0.18.14", "loguru>=0.7.3", "langchain-text-splitters>=0.3.11", "tiktoken>=0.11.0", "qdrant-client>=1.12.1", "langchain-chroma>=0.2.2", "faiss-cpu>=1.11.0.post1", "numpy>=1.26.4", "langchain-qdrant>=0.2.0", "langchain-pinecone>=0.0.1", "langchain-huggingface>=0.3.1", "langchain-cohere>=0.4.5", "flashrank>=0.2.10", "rank-bm25>=0.2.2", "fastmobo>=0.1.0", "langsmith>=0.3.45"]
+requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
+[tool.pdm]
+distribution = true
+
+[dependency-groups]
+test = [
+    "pytest>=8.4.2",
+]
+dev = [
+    "pytest>=8.4.2",
+    "pandas>=2.3.2",
+]
