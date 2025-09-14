@@ -7,7 +7,8 @@ venv
 *.so
 **/demo.py
 **/main.py
-
+**/archive
+**/data
 # Distribution / packaging
 .Python
 build/

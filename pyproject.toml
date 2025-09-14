@@ -5,7 +5,7 @@ description = "RAG workflow Optimizer based on Bayesian Optimization"
 authors = [
     {name = "abdelrahman abounida", email = "abdelrahmanaboneda@gmail.com"},
 ]
-dependencies = ["langchain-community>=0.3.21", "langchain>=0.3.27", "unstructured>=0.18.14", "loguru>=0.7.3", "langchain-text-splitters>=0.3.11", "tiktoken>=0.11.0", "qdrant-client>=1.12.1", "langchain-chroma>=0.2.2", "faiss-cpu>=1.11.0.post1", "numpy>=1.26.4", "langchain-qdrant>=0.2.0", "langchain-pinecone>=0.0.1", "langchain-huggingface>=0.3.1", "langchain-cohere>=0.4.5", "flashrank>=0.2.10", "rank-bm25>=0.2.2", "fastmobo>=0.1.0", "langsmith>=0.3.45"]
+dependencies = ["langchain-community>=0.3.21", "langchain>=0.3.27", "unstructured>=0.18.14", "loguru>=0.7.3", "langchain-text-splitters>=0.3.11", "tiktoken>=0.11.0", "qdrant-client>=1.12.1", "langchain-chroma>=0.2.2", "faiss-cpu>=1.11.0.post1", "numpy>=1.26.4", "langchain-qdrant>=0.2.0", "langchain-pinecone>=0.0.1", "langchain-huggingface>=0.3.1", "langchain-cohere>=0.4.5", "flashrank>=0.2.10", "rank-bm25>=0.2.2", "fastmobo>=0.1.0", "langsmith>=0.3.45", "langchain-unstructured>=0.1.6", "langchain-core>=0.3.76", "openai>=1.107.2", "aiohttp>=3.12.15", "pinecone-client>=3.2.2", "msoffcrypto-tool>=5.4.2"]
 requires-python = ">=3.11"
 readme = "README.md"
 license = {text = "MIT"}
