@@ -25,7 +25,6 @@ from rag_opt.eval.metrics.full import CostMetric, LatencyMetric, SafetyMetric, A
 from rag_opt.dataset import RAGDataset
 from rag_opt.llm import RAGLLM
 from typing import Dict, List, Tuple, Any, Optional
-from loguru import logger
 from fastmobo.problems import FastMoboProblem
 from fastmobo.mobo import FastMobo
 import itertools
@@ -1048,71 +1047,74 @@ class RAGEvaluator:
     llm: RAGLLM = None
     def __init__(self, 
                  llm: RAGLLM=None,
-                 metrics: Optional[Dict[str, BaseMetric]] = None, # TODO:: recheck this again 
+                 metrics: list[BaseMetric] = [], # TODO:: recheck this again 
                  dataset: Optional[RAGDataset] = None
                  ):
         
-        
+        # TODO:: how to get custom metrics from user 
         self.metrics = {
             MetricCategory.PERFORMANCE: {},
             MetricCategory.SAFETY: {},
             MetricCategory.RETRIEVAL: {},
             MetricCategory.GENERATION: {},
         }
-        self._initialize_metrics(metrics)
         self.llm = llm
+        self.dataset = dataset
+        self._initialize_metrics(metrics)
 
     def _initialize_metrics(self, metrics: Optional[Dict[str, BaseMetric]] = None):
         """Initialize all available metrics"""
         # TODO:: load from metrics
+
+        # TODO:: uncomment these and pass the llm , prompts, .. 
         # Performance Metrics (System-level)
-        self.metrics[MetricCategory.PERFORMANCE].update({
-            'cost': CostMetric(),
-            'latency': LatencyMetric()
-        })
+        # self.metrics[MetricCategory.PERFORMANCE].update({
+        #     'cost': CostMetric(),
+        #     'latency': LatencyMetric()
+        # })
         
         # Safety Metrics (System-level)
-        self.metrics[MetricCategory.SAFETY].update({
-            'safety': SafetyMetric(),
-            'alignment': AlignmentMetric()
-        })
+        # self.metrics[MetricCategory.SAFETY].update({
+        #     'safety': SafetyMetric(),
+        #     'alignment': AlignmentMetric()
+        # })
         
         # Retrieval Metrics (Component-level)
         self.metrics[MetricCategory.RETRIEVAL].update({
             # RAGAS Context Metrics
-            'context_precision': ContextPrecision(),
-            'context_entities_recall': ContextEntitiesRecall(),
-            'noise_sensitivity': NoiseSensitivity(),
+            'context_precision': ContextPrecision(llm=self.llm),
+            # 'context_entities_recall': ContextEntitiesRecall(),
+            # 'noise_sensitivity': NoiseSensitivity(),
             
-            # AutoRAG Retrieval Metrics
-            'precision': RetrievalPrecision(),
-            'recall': RetrievalRecall(),
-            'f1_score': RetrievalF1(),
-            'mrr': MRR(),
-            'map': MAP(),
-            'ndcg': NDCG(),
+            # # AutoRAG Retrieval Metrics
+            # 'precision': RetrievalPrecision(),
+            # 'recall': RetrievalRecall(),
+            # 'f1_score': RetrievalF1(),
+            # 'mrr': MRR(),
+            # 'map': MAP(),
+            # 'ndcg': NDCG(),
             
-            # Token-level Retrieval Metrics
-            'token_precision': TokenPrecision(),
-            'token_recall': TokenRecall(),
-            'token_f1': TokenF1()
+            # # Token-level Retrieval Metrics
+            # 'token_precision': TokenPrecision(),
+            # 'token_recall': TokenRecall(),
+            # 'token_f1': TokenF1()
         })
         
         # Generation Metrics (Content-level)
-        self.metrics[MetricCategory.GENERATION].update({
-            # RAGAS Generation Metrics
-            'response_relevancy': ResponseRelevancy(),
-            'faithfulness': Faithfulness(),
-            'faithfulness_hhem': FaithfulnessHHEM(),
+        # self.metrics[MetricCategory.GENERATION].update({
+        #     # RAGAS Generation Metrics
+        #     'response_relevancy': ResponseRelevancy(),
+        #     'faithfulness': Faithfulness(),
+        #     'faithfulness_hhem': FaithfulnessHHEM(),
             
-            # AutoRAG Generation Metrics
-            'bleu': BleuScore(),
-            'rouge': RougeScore(),
-            'meteor': MeteorScore(),
-            'sem_score': SemanticScore(),
-            'g_eval': GEval(),
-            'bert_score': BertScore()
-        })
+        #     # AutoRAG Generation Metrics
+        #     'bleu': BleuScore(),
+        #     'rouge': RougeScore(),
+        #     'meteor': MeteorScore(),
+        #     'sem_score': SemanticScore(),
+        #     'g_eval': GEval(),
+        #     'bert_score': BertScore()
+        # })
     
 
     @staticmethod
@@ -1122,33 +1124,41 @@ class RAGEvaluator:
         
     # ============== EVALUATION METHODS ==============
     
-    def evaluate_all(self, query: str, retrieved_contexts: List[str], 
-                    generated_response: str, ground_truth: Optional[str] = None,
-                    **kwargs) -> Dict[str, MetricResult]:
+    def evaluate_all(self, 
+                    #  query: str, retrieved_contexts: List[str], 
+                    # generated_response: str, ground_truth: Optional[str] = None,
+                    **kwargs
+                    ) -> Dict[str, MetricResult]:
         """Evaluate all metrics and return comprehensive results"""
         results = {}
         
         for category in MetricCategory:
             category_results = self.evaluate_category(
-                category, query, retrieved_contexts, generated_response, ground_truth, **kwargs
+                category=category, 
+                # query, retrieved_contexts, generated_response, ground_truth,
+                 **kwargs
             )
             results.update(category_results)
         
         return results
     
-    def evaluate_category(self, category: MetricCategory, query: str, 
-                         retrieved_contexts: List[str], generated_response: str,
-                         ground_truth: Optional[str] = None, **kwargs) -> Dict[str, MetricResult]:
+    def evaluate_category(self, category: MetricCategory,
+                        #   query: str, 
+                        #  retrieved_contexts: List[str], generated_response: str,
+                        #  ground_truth: Optional[str] = None,
+                          **kwargs) -> Dict[str, MetricResult]:
         """Evaluate all metrics in a specific category"""
         results = {}
         
         for metric_name, metric in self.metrics[category].items():
             try:
+                # TODO :: pass dataset 
                 result = metric.evaluate(
-                    query=query,
-                    contexts=retrieved_contexts,
-                    response=generated_response,
-                    ground_truth=ground_truth,
+                    # query=query, # TODO:: recheck
+                    # contexts=retrieved_contexts,
+                    # response=generated_response,
+                    # ground_truth=ground_truth,
+                    dataset=self.dataset,
                     **kwargs
                 )
                 results[metric_name] = result
@@ -1175,7 +1185,6 @@ class RAGEvaluator:
         return results
     
     # ============== COST EVALUATION (DETAILED) ==============
-    
     def evaluate_cost_detailed(self, **kwargs) -> Dict[str, float]:
         """
         Detailed cost evaluation - this is where you'd handle the complexity
@@ -1215,7 +1224,6 @@ class RAGEvaluator:
         pass
     
     # ============== AGGREGATION METHODS ==============
-    
     def aggregate_results(self, results: Dict[str, MetricResult], 
                          aggregation_method: str = 'weighted_average') -> float:
         """Aggregate multiple metric results into a single score"""
@@ -1242,7 +1250,6 @@ class RAGEvaluator:
         pass
     
     # ============== UTILITY METHODS ==============
-    
     def get_metrics_by_scope(self, scope: MetricScope) -> Dict[str, BaseMetric]:
         """Get all metrics filtered by scope"""
         filtered_metrics = {}
@@ -1263,100 +1270,98 @@ class RAGEvaluator:
         return metrics_info
 
 
-def complete_optimization_example():
-    """
-    Complete example showing how to use the entire optimization pipeline
-    """
+# def complete_optimization_example():
+#     """
+#     Complete example showing how to use the entire optimization pipeline
+#     """
     
-    # Step 1: Prepare your components (replace with your actual components)
-    embeddings_dict = {
-        'openai': None,  # YourOpenAIEmbeddings(),
-        'huggingface': None,  # YourHuggingFaceEmbeddings()
-    }
+#     # Step 1: Prepare your components (replace with your actual components)
+#     embeddings_dict = {
+#         'openai': None,  # YourOpenAIEmbeddings(),
+#         'huggingface': None,  # YourHuggingFaceEmbeddings()
+#     }
     
-    vector_stores_dict = {
-        'faiss': None,  # YourFAISSVectorStore(),
-        'chroma': None,  # YourChromaVectorStore()
-    }
+#     vector_stores_dict = {
+#         'faiss': None,  # YourFAISSVectorStore(),
+#         'chroma': None,  # YourChromaVectorStore()
+#     }
     
-    llms_dict = {
-        'openai_gpt-3.5-turbo': None,  # YourOpenAILLM(model="gpt-3.5-turbo"),
-        'openai_gpt-4': None,  # YourOpenAILLM(model="gpt-4"),
-        'anthropic_claude-3-sonnet': None,  # YourAnthropicLLM()
-    }
+#     llms_dict = {
+#         'openai_gpt-3.5-turbo': None,  # YourOpenAILLM(model="gpt-3.5-turbo"),
+#         'openai_gpt-4': None,  # YourOpenAILLM(model="gpt-4"),
+#         'anthropic_claude-3-sonnet': None,  # YourAnthropicLLM()
+#     }
     
-    rerankers_dict = {
-        'cross_encoder': None,  # YourCrossEncoderReranker(),
-        'colbert': None,  # YourColBERTReranker()
-    }
+#     rerankers_dict = {
+#         'cross_encoder': None,  # YourCrossEncoderReranker(),
+#         'colbert': None,  # YourColBERTReranker()
+#     }
     
-    # Step 2: Initialize optimization workflow
-    workflow = RAGOptimizationWorkflow(
-        embeddings_dict=embeddings_dict,
-        vector_stores_dict=vector_stores_dict,
-        llms_dict=llms_dict,
-        rerankers_dict=rerankers_dict
-    )
+#     # Step 2: Initialize optimization workflow
+#     workflow = RAGOptimizationWorkflow(
+#         embeddings_dict=embeddings_dict,
+#         vector_stores_dict=vector_stores_dict,
+#         llms_dict=llms_dict,
+#         rerankers_dict=rerankers_dict
+#     )
     
-    # Step 3: Prepare evaluation data
-    evaluation_queries, ground_truths = workflow.prepare_evaluation_dataset()
-    print(f"📊 Prepared {len(evaluation_queries)} evaluation queries")
+#     # Step 3: Prepare evaluation data
+#     evaluation_queries, ground_truths = workflow.prepare_evaluation_dataset()
+#     print(f"📊 Prepared {len(evaluation_queries)} evaluation queries")
     
-    # Step 4: Run optimization
-    optimization_results = workflow.run_comprehensive_optimization(
-        evaluation_queries=evaluation_queries,
-        ground_truths=ground_truths,
-        optimization_method='both',  # 'bayesian', 'grid', or 'both'
-        n_iterations=20
-    )
+#     # Step 4: Run optimization
+#     optimization_results = workflow.run_comprehensive_optimization(
+#         evaluation_queries=evaluation_queries,
+#         ground_truths=ground_truths,
+#         optimization_method='both',  # 'bayesian', 'grid', or 'both'
+#         n_iterations=20
+#     )
     
-    # Step 5: Analyze results
-    if 'comparison' in optimization_results:
-        print("\n📈 Optimization Method Comparison:")
-        comparison = optimization_results['comparison']
-        print(f"Grid Search: {comparison['grid_search']}")
-        print(f"Bayesian: {comparison['bayesian_optimization']}")
+#     # Step 5: Analyze results
+#     if 'comparison' in optimization_results:
+#         comparison = optimization_results['comparison']
+#         print(f"Grid Search: {comparison['grid_search']}")
+#         print(f"Bayesian: {comparison['bayesian_optimization']}")
     
-    # Step 6: Deploy best configuration
-    best_rag = workflow.deploy_best_configuration(
-        optimization_results=optimization_results,
-        method='bayesian'
-    )
+#     # Step 6: Deploy best configuration
+#     best_rag = workflow.deploy_best_configuration(
+#         optimization_results=optimization_results,
+#         method='bayesian'
+#     )
     
-    # Step 7: Test deployed system
-    test_query = "What is the future of artificial intelligence?"
-    answer = best_rag.get_answer(test_query)
-    print(f"\n🤖 Test Query: {test_query}")
-    print(f"📝 Answer: {answer}")
+#     # Step 7: Test deployed system
+#     test_query = "What is the future of artificial intelligence?"
+#     answer = best_rag.get_answer(test_query)
+#     print(f"\n🤖 Test Query: {test_query}")
     
-    return optimization_results, best_rag
+#     return optimization_results, best_rag
 
 
-if __name__ == "__main__":
-    # Initialize evaluator
-    evaluator = RAGEvaluator()
+# if __name__ == "__main__":
+#     # Initialize evaluator
+#     evaluator = RAGEvaluator()
     
-    # Example usage
-    query = "What is the capital of France?"
-    contexts = ["France is a country in Europe.", "Paris is the capital of France."]
-    response = "The capital of France is Paris."
-    ground_truth = "Paris"
+#     # Example usage
+#     query = "What is the capital of France?"
+#     contexts = ["France is a country in Europe.", "Paris is the capital of France."]
+#     response = "The capital of France is Paris."
+#     ground_truth = "Paris"
     
-    # Evaluate all metrics
-    results = evaluator.evaluate_all(query, contexts, response, ground_truth)
+#     # Evaluate all metrics
+#     results = evaluator.evaluate_all(query, contexts, response, ground_truth)
     
-    # Evaluate specific category
-    retrieval_results = evaluator.evaluate_category(
-        MetricCategory.RETRIEVAL, query, contexts, response, ground_truth
-    )
+#     # Evaluate specific category
+#     retrieval_results = evaluator.evaluate_category(
+#         MetricCategory.RETRIEVAL, query, contexts, response, ground_truth
+#     )
     
-    # Evaluate specific metrics
-    specific_results = evaluator.evaluate_specific_metrics(
-        ['cost', 'latency', 'faithfulness'], 
-        query=query, contexts=contexts, response=response
-    )
+#     # Evaluate specific metrics
+#     specific_results = evaluator.evaluate_specific_metrics(
+#         ['cost', 'latency', 'faithfulness'], 
+#         query=query, contexts=contexts, response=response
+#     )
     
-    # Get detailed cost breakdown
-    cost_details = evaluator.evaluate_cost_detailed(
-        api_calls=10, processing_time=2.5, storage_mb=100
-    )
+#     # Get detailed cost breakdown
+#     cost_details = evaluator.evaluate_cost_detailed(
+#         api_calls=10, processing_time=2.5, storage_mb=100
+#     )

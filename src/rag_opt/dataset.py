@@ -48,6 +48,9 @@ class RAGDataset(BaseModel):
     def from_json(cls, path: str) -> 'RAGDataset':
         with open(path, 'r') as f:
             return cls.model_validate_json(f.read())
+    
+    def __len__(self):
+        return len(self.items)
 
 class DatasetGenerator:
     _prompt: BasePromptTemplate = None 
