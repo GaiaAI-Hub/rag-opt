@@ -61,7 +61,6 @@ class CustomFileLoader(BaseLoader):
                 str(file_path),
                 **self.kwargs
             )
-        # TODO:: support other extentions 
         try:
             for doc in loader.lazy_load():
                 yield doc
@@ -127,6 +126,7 @@ class Parser:
     def load_text(self) -> list[str]:
         """Load the data folder files into list of strings."""
         docs = self.load_docs()
+        logger.debug(f"Retrieved Contexts: {docs[0]}")
         raw_texts = [doc.page_content for doc in docs]
         return raw_texts
     

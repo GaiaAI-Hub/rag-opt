@@ -3,12 +3,17 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv
+**/chroma_db
 # C extensions
 *.so
-**/demo.py
+**/**demo**.py
+**/rag_config.yaml
 **/main.py
 **/archive
 **/data
+**/final.py
+rag_dataset.json
+**/demo3.py
 # Distribution / packaging
 .Python
 build/
@@ -127,6 +132,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+**/venv
 env/
 venv/
 ENV/

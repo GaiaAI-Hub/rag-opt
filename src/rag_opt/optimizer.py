@@ -1,117 +1,120 @@
+from typing import Optional
+from typing_extensions import Annotated, Doc
 
-from rag_opt.rag.config import RAGConfig
-from typing import Any
-import numpy as np 
+from loguru import logger
+from fastmobo import FastMobo
+from fastmobo.mobo import OptimizationResult
 
-# TODO:: Test Demo RAG with small search space and then come here and design small cost function and demo botorch 
-# TODO::: build and allow custom optimizer based on fastmobo
+from rag_opt.eval._problem import RAGOptimizationProblem
+from rag_opt.search_space import RAGSearchSpace
+from rag_opt._manager import RAGPipelineManager
+from rag_opt.dataset import TrainDataset
+from rag_opt._config import RAGConfig
+from rag_opt.llm import RAGLLM
+import torch
 
 class Optimizer:
     """Multi-Objective Bayesian Optimization for RAG pipeline"""
     
-    def __init__(self, 
-                 search_space: dict[str, Any],
-                 objective_functions: list[str] = None):
-        """
-        Initialize optimizer
+    def __init__(
+        self, 
+        train_dataset: Annotated[TrainDataset, Doc("Dataset for ground truth in optimization")],
+        config_path: Annotated[str, Doc("Path to RAG configuration YAML file")],
+        *,
+        optimizer: Annotated[Optional[FastMobo], Doc("Custom FastMobo optimizer")] = None,
+        problem: Annotated[Optional[RAGOptimizationProblem], Doc("Optimization problem")] = None,
+        search_space: Annotated[Optional[RAGSearchSpace], Doc("RAG search space")] = None,
+        verbose: Annotated[bool, Doc("Enable optimization logging")] = True,
+        evaluator_llm: Annotated[Optional[RAGLLM | str], Doc("LLM for metric evaluation")] = None, 
+    ):
+        """Initialize optimizer with configuration and optional custom components"""
+        self.verbose = verbose
+        self.train_dataset = train_dataset
         
-        Args:
-            search_space: Dictionary defining hyperparameter search space
-            objective_functions: List of objectives to optimize (e.g., ['accuracy', 'latency', 'cost'])
-        """
-        self.search_space = search_space
-        self.objective_functions = objective_functions or ['relevance', 'latency']
-        self.trials_history = []
+        self.search_space = search_space or RAGSearchSpace.from_yaml(config_path)
+        self.rag_pipeline_manager = RAGPipelineManager(search_space=self.search_space,verbose=verbose)
+        self.evaluator_llm = self._get_evaluator_llm(evaluator_llm)
+        self.optimization_problem = problem or RAGOptimizationProblem(
+            train_dataset=train_dataset,
+            rag_pipeline_manager=self.rag_pipeline_manager,
+            evaluator_llm=self.evaluator_llm,
+        )
+        self.mobo_optimizer = optimizer or self._initialize_optimizer()
     
-    def objective_function(self, config: RAGConfig, test_queries: list[str]) -> dict[str, float]:
-        """
-        Evaluate RAG pipeline performance
-        
-        Returns:
-            Dictionary with objective scores
-        """
-        # Placeholder implementation - replace with actual evaluation logic
-        scores = {}
-        
-        # Example objectives
-        if 'relevance' in self.objective_functions:
-            # Compute relevance score (e.g., using RAGAS, human evaluation, etc.)
-            scores['relevance'] = np.random.uniform(0.6, 0.95)  # Placeholder
-        
-        if 'latency' in self.objective_functions:
-            # Measure query latency
-            import time
-            start_time = time.time()
-            # Simulate query processing
-            time.sleep(np.random.uniform(0.1, 2.0))  # Placeholder
-            scores['latency'] = time.time() - start_time
-        
-        if 'cost' in self.objective_functions:
-            # Estimate cost based on model usage
-            scores['cost'] = self._estimate_cost(config)
-        
-        return scores
+    def _get_evaluator_llm(self, evaluator_llm: Optional[RAGLLM | str]) -> RAGLLM:
+        """Get or initialize evaluator LLM"""
+        if evaluator_llm is None:
+            return self.rag_pipeline_manager.initiate_llm()
+        if isinstance(evaluator_llm, RAGLLM):
+            return evaluator_llm
+        return self.rag_pipeline_manager.initiate_llm(llm_name=evaluator_llm)
     
-    def _estimate_cost(self, config: RAGConfig) -> float:
-        """Estimate cost based on configuration"""
-        # Placeholder cost estimation
-        base_cost = 0.01
-        if config.llm_provider == "openai":
-            base_cost *= 1.5
-        if config.embedding_provider == "openai":
-            base_cost *= 1.2
-        return base_cost
+    def _initialize_optimizer(self, **kwargs) -> FastMobo:
+        """Initialize FastMobo optimizer with initial training data"""
+        # Generate initial data
+        train_configs, evaluation_datasets = self.optimization_problem.generate_initial_data(
+            n_samples=1
+        )
+        
+        # Convert to tensors
+        # TODO:: recheck matching between train_x and train_y
+        train_x = self.search_space.configs_to_tensor(train_configs)
+        train_y = self.optimization_problem.evaluator.evaluate_batch(evaluation_datasets,return_tensor=True)
+
+        return FastMobo(
+            problem=self.optimization_problem.create_fastmobo_problem(),
+            acquisition_functions=['qEHVI', 'Random'], 
+            batch_size=2,
+            train_x=train_x, 
+            train_y=train_y,
+            n_initial=10,
+            ref_point=self.optimization_problem.ref_point,
+            bounds=self.optimization_problem.bounds,
+            **kwargs
+        )
     
-    def optimize(self, n_trials: int = 50) -> RAGConfig:
+    def optimize(self, n_trials: int = 50, **kwargs) -> dict[str, RAGConfig]:
         """
         Run Bayesian optimization to find best RAG configuration
         
+        Args:
+            n_trials: Number of optimization trials
+            
         Returns:
-            Best configuration found
+            Best configuration per acquisition function
         """
-        # Placeholder implementation - integrate with botorch or similar
-        print(f"Running {n_trials} optimization trials...")
+        logger.info(f"Running {n_trials} optimization trials...")
         
-        best_config = None
-        best_score = float('-inf')
-        
-        for trial in range(n_trials):
-            # Sample random configuration (replace with Bayesian optimization)
-            config = self._sample_config()
-            
-            # Evaluate configuration
-            scores = self.objective_function(config, test_queries=[])
-            
-            # Compute overall score (weighted sum or Pareto optimization)
-            overall_score = self._compute_overall_score(scores)
-            
-            if overall_score > best_score:
-                best_score = overall_score
-                best_config = config
-            
-            self.trials_history.append({'config': config, 'scores': scores})
-            print(f"Trial {trial + 1}: Score = {overall_score:.3f}")
-        
-        return best_config
-    
-    def _sample_config(self) -> RAGConfig:
-        """Sample configuration from search space"""
-        # Placeholder - implement proper sampling
-        return RAGConfig(
-            chunk_size=np.random.choice([500, 1000, 1500]),
-            chunk_overlap=np.random.choice([25, 50, 100]),
-            k=np.random.choice([3, 4, 5, 6]),
-            temperature=np.random.uniform(0.3, 0.9)
+        result: OptimizationResult = self.mobo_optimizer.optimize(
+            n_iterations=n_trials, 
+            verbose=self.verbose
         )
-    
-    def _compute_overall_score(self, scores: dict[str, float]) -> float:
-        """Compute overall score from multiple objectives"""
-        # Simple weighted sum (implement proper multi-objective optimization)
-        weights = {'relevance': 0.7, 'latency': -0.2, 'cost': -0.1}
         
-        overall = 0.0
-        for objective, score in scores.items():
-            if objective in weights:
-                overall += weights[objective] * score
+        logger.info(f"Optimization complete. Hypervolumes: {result.hypervolumes}")
         
-        return overall
+        # Extract best configs for each acquisition function
+        best_configs = {}
+        
+        for acq_func in result.train_x.keys():
+            X = result.train_x[acq_func]  
+            Y = result.train_obj_true[acq_func] 
+            
+            avg_performance = Y.mean(dim=1)
+            best_idx = avg_performance.argmax().item()
+            
+            best_config_tensor = X[best_idx]
+            
+            logger.info(f"  Best config index: {best_idx}")
+            logger.info(f"  Best average objective: {avg_performance[best_idx]:.4f}")
+            logger.info(f"  Best objectives: {Y[best_idx]}")
+            
+            try:
+                best_configs[acq_func] = self.search_space.tensor_to_config(best_config_tensor)
+                logger.info(f"  Successfully decoded to RAGConfig")
+            except Exception as e:
+                logger.error(f"  Failed to decode config for {acq_func}: {e}")
+                logger.error(f"  Tensor shape: {best_config_tensor.shape}")
+                logger.error(f"  Tensor values: {best_config_tensor}")
+                raise
+        
+        return best_configs

@@ -1,31 +1,28 @@
 from langchain_core.prompts import PromptTemplate, get_template_variables
-from typing_extensions import Annotated, Doc, Optional, Any
-from rag_opt.dataset import RAGDataset
+from typing_extensions import Annotated, Doc, Optional, Any, Literal
+from rag_opt.dataset import EvaluationDataset
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from rag_opt.llm import RAGLLM
+import rag_opt._utils as _utils
 from loguru import logger
 from enum import Enum 
 import re 
 
 class MetricCategory(Enum):
     """Categories for different types of metrics"""
-    PERFORMANCE = "performance"  # Cost, Latency
-    SAFETY = "safety"           # Safety, Alignment
-    RETRIEVAL = "retrieval"     # Context-related metrics
-    GENERATION = "generation"   # Response quality metrics
+    FULL = "FULL"        
+    RETRIEVAL = "retrieval"     
+    GENERATION = "generation"   
 
-class MetricScope(Enum):
-    """Scope of metric evaluation"""
-    SYSTEM_LEVEL = "system"     # Overall system metrics (cost, latency)
-    COMPONENT_LEVEL = "component"  # Specific component metrics
-    CONTENT_LEVEL = "content"   # Content quality metrics
+
 
 @dataclass
 class MetricResult:
     """Standard result structure for all metrics"""
     name: str
-    value: float # all metrics should be qualitative / digitalized
+    value: float
+    category: MetricCategory
     metadata: Optional[dict[str, Any]] = None
     error: Optional[str] = None
 
@@ -40,53 +37,72 @@ def _camel_to_snake(name: str) -> str:
     return s2.lower()
 
 class BaseMetric(ABC):
-    """Base class for all metrics"""
-    _prompt_template: str = None
+    """Base class for all metrics
+    Note: ALl Metrics will be llm-based (which means llm will be the main source of truth)
+    """
+    name: str 
+    category: MetricCategory
     prompt: PromptTemplate = None
+    _prompt_template: str = None
+    is_llm_based: bool = True
+    negate: Annotated[bool, "if True the metric value will be negated, which means we need to minimize this metric"] = False
+    worst_value: Annotated[float, "Worst-case value for this metric (for reference point estimation)"] = 0.0
 
     def __init__(self, 
-                 llm: Annotated[RAGLLM, Doc("the llm to be used in the dataset generation process")],
+                 llm: Annotated[Optional[RAGLLM], Doc("the llm to be used in the dataset evaluation process")] = None,
                  prompt: Annotated[str, Doc("the prompt template to be used for evaluating context precision")] = None,
-                 *,
-                 name: Annotated[str, Doc("the name of the metric")] = None,
-                 category: Annotated[MetricCategory, Doc("the category of the metric")] = MetricCategory.RETRIEVAL, 
-                 scope: Annotated[MetricScope, Doc("the scope of the metric")] = MetricScope.COMPONENT_LEVEL, 
+                 **kwargs
                  ):
-        self.name = name or self._generate_name_from_cls()
-        self.category = category
-        self.scope = scope
+        self.name = self.name or self._generate_name_from_cls()
+
+        if self.is_llm_based and not llm:
+            logger.error("LLM is required in this metric")
+            raise ValueError("LLM is required in this metric")
+        
         self.llm = llm
 
-        if prompt:
-            self._validate_prompt(prompt)
-            
-        self.prompt = PromptTemplate(template = self._prompt_template or prompt, 
+        if self.is_llm_based and prompt:
+            _utils.validate_prompt(self._prompt_template,prompt, raise_error=True)
+
+        
+        if self.is_llm_based:    
+            self.prompt = PromptTemplate(template = self._prompt_template or prompt, 
                                          input_variables=get_template_variables(self._prompt_template, "f-string"))
+    
     @property
-    @abstractmethod
+    def worst_value(self) -> float:
+        """Worst-case value (per query) for this metric (for reference point estimation)"""
+        return 0.0 
+    
+    @property
     def _prompt_template(self) -> str:
         """Every metric must define a prompt template"""
+        if self.is_llm_based and not self._prompt_template:
+            logger.error("Prompt template is required in this metric")
+            raise ValueError("Prompt template is required in this metric")
 
     @abstractmethod
-    def evaluate(self, dataset:RAGDataset, **kwargs) -> MetricResult:
+    def _evaluate(self, dataset:EvaluationDataset, **kwargs) -> list[float]:
         """Evaluate the metric and return structured result"""
         raise NotImplementedError("evaluate method not implemented")
+    
+
+    def evaluate(self, 
+                dataset:EvaluationDataset,
+                **kwargs) -> MetricResult:
+        """ Main Evaluation Logic"""
+        scores =  self._evaluate(dataset, **kwargs)
+        if not scores:
+            return MetricResult(name=self.name, value=0, category=self.category)
+        
+        return MetricResult(name=self.name, 
+                            value=sum(scores)/len(scores), 
+                            category=self.category, 
+                            metadata={"scores": scores})
+        
 
     def _generate_name_from_cls(self):
         return _camel_to_snake(self.__class__.__name__)
 
-    def _validate_prompt(self,prompt_template:str):
-        vars = get_template_variables(prompt_template, "f-string")
-        prompt_vars = get_template_variables(self._prompt_template, "f-string")
-        needed_vars = set(prompt_vars) - set(vars)
-        diff = set(vars) ^ set(prompt_vars)
-        if needed_vars:
-            logger.error(f"Your prompt is missing the following variables: {needed_vars}")
-            raise ValueError(f"Your prompt is missing the following variables: {needed_vars}")
-        
-        if diff:
-            logger.error(f"Your prompt contains extra variables: {diff} \n your prompt must only contain the following variables only:  {prompt_vars}")
-            raise ValueError(f"Your prompt contains extra variables: {diff}")
     
-
     
