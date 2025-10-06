@@ -16,7 +16,7 @@ jobs:
       id-token: write # Needed for trusted publishing
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up PDM
         uses: pdm-project/setup-pdm@v4
