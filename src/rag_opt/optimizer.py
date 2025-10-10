@@ -73,7 +73,7 @@ class Optimizer:
             **kwargs
         )
     
-    def optimize(self, n_trials: int = 50, **kwargs) -> dict[str, RAGConfig]:
+    def optimize(self, n_trials: int = 50,best_one:bool=False, **kwargs) -> dict[str, RAGConfig] | RAGConfig:
         """
         Run Bayesian optimization to find best RAG configuration
         
@@ -115,6 +115,8 @@ class Optimizer:
                 logger.error(f"  Failed to decode config for {acq_func}: {e}")
                 logger.error(f"  Tensor shape: {best_config_tensor.shape}")
                 logger.error(f"  Tensor values: {best_config_tensor}")
-                raise
         
+        # TODO:: return best 
+        if best_one:
+            best_configs = list(best_configs.values())[0] # get first value
         return best_configs

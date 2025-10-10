@@ -6,7 +6,7 @@ from rag_opt.rag._pricing import (LLMTokenCost,
                                   VectorStoreCost,
                                 )
 from dataclasses import dataclass, asdict
-
+import json 
 
 VectorStoreProvider = Literal["faiss", "chroma", "pinecone", "weaviate"]
 SearchType = Literal["similarity",   "mmr", "bm25", "tfidf", "hybrid"]
@@ -124,6 +124,9 @@ class RAGConfig:
     vector_store: VectorStoreItem
     use_reranker: Optional[bool] = False
     reranker: Optional[RerankerModel] = None
+
+    def to_json(self):
+        return json.dumps(self.to_dict())
 
     def to_dict(self):
         return asdict(self)
