@@ -7,7 +7,7 @@ venv
 # C extensions
 *.so
 **/**demo**.py
-**/rag_config.yaml
+**/src/rag_config.yaml
 **/main.py
 **/archive
 **/data
