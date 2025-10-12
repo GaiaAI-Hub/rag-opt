@@ -168,7 +168,7 @@ class SamplingMixin(ABC):
                     if model_param_name in expanded_params:
                         param_idx += 1
                         model_idx = self._extract_model_index(config_value, choices_list[choice_idx])
-                        n_models = len(choices_list[choice_idx].models) # TODO:: retest this for diff providers
+                        n_models = len(choices_list[choice_idx].models) 
                         sample[param_idx] = model_idx / (n_models - 1) if n_models > 1 else 0.0
                 else:
                     sample[param_idx] = 0.0

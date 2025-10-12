@@ -18,7 +18,7 @@ from rag_opt.llm import RAGLLM
 # NOTE:: use ReAct, langchain agent , langgraph (make custom agentic RAG possible)
 # NOTE;: allow async and running server
 
-class GAIARAG:
+class RAGWorkflow:
     """Main RAG pipeline class"""
     
     agent_executor: Annotated[AgentExecutor, Doc("The agent executor in case of running handling RAG process using agent")] = None

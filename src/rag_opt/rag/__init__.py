@@ -5,7 +5,7 @@ from rag_opt.rag.retriever import Retriever
 from rag_opt.rag.splitter  import Splitter
 from rag_opt.rag.indexer import Indexer
 from rag_opt.rag.parser import Parser
-from rag_opt.rag.rag import GAIARAG
+from rag_opt.rag.rag import RAGWorkflow
 
 __all__ = [
     "Parser",
@@ -13,7 +13,7 @@ __all__ = [
     "Retriever",
     "BaseReranker",
     "Splitter",
-    "GAIARAG",
+    "RAGWorkflow",
     "init_reranker",
     "init_vectorstore",
     "DatasetGenerator"

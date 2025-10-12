@@ -1,8 +1,8 @@
 from rag_opt.eval.metrics import MetricResult, MetricCategory, BaseMetric
-from rag_opt.dataset import EvaluationDataset
-from rag_opt.llm import RAGLLM
-from typing import Optional, Literal
 from concurrent.futures import Future, Executor
+from rag_opt.dataset import EvaluationDataset
+from typing import Optional, Literal
+from rag_opt.llm import RAGLLM
 import rag_opt._utils as _utils
 from loguru import logger
 import torch

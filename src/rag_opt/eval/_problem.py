@@ -59,21 +59,7 @@ class RAGOptimizationProblem:
     @cached_property
     def objectives(self) -> list[str]:
         return self.evaluator.metric_names
-    
-    # def objective_function(self, x: torch.Tensor) -> torch.Tensor:
-    #     """
-    #     Multi-objective function for hyperparameter optimization
-    #     Args:
-    #         x: [batch_size, num_hyperparams] 
-    #     Returns: 
-    #         [batch_size, num_objectives]
-    #     """
-    #     rag_config = self.rag_pipeline_manager.decode_sample_to_rag_config(sample=x)
-    #     eval_dataset = self.rag_pipeline_manager.generate_evaluation_data(config=rag_config,
-    #                                                                 train_data=self.train_dataset)
-        
-    #     objectives = self.evaluator.evaluate(eval_dataset, return_tensor=True) 
-    #     return  objectives 
+
     def objective_function(self, x: torch.Tensor) -> torch.Tensor:
         """
         Multi-objective function for hyperparameter optimization
@@ -111,7 +97,7 @@ class RAGOptimizationProblem:
             ref_point=self.ref_point,
             num_objectives=len(self.objectives),
             noise_std=noise_std,
-            # dim=len(self.bounds), # TODO:: see diff way to get seachspace dim 
+            # dim=len(self.bounds),
             negate=False  # NOTE:: we do negation internally per metric like cost , latency
         )
 

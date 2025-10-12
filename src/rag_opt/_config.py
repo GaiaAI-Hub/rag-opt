@@ -125,6 +125,12 @@ class RAGConfig:
     use_reranker: Optional[bool] = False
     reranker: Optional[RerankerModel] = None
 
+    @classmethod
+    def from_json(cls, file_path: str):
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls(**data)
+
     def to_json(self):
         return json.dumps(self.to_dict())
 

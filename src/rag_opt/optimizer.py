@@ -11,7 +11,6 @@ from rag_opt._manager import RAGPipelineManager
 from rag_opt.dataset import TrainDataset
 from rag_opt._config import RAGConfig
 from rag_opt.llm import RAGLLM
-import torch
 
 class Optimizer:
     """Multi-Objective Bayesian Optimization for RAG pipeline"""
@@ -57,7 +56,6 @@ class Optimizer:
         )
         
         # Convert to tensors
-        # TODO:: recheck matching between train_x and train_y
         train_x = self.search_space.configs_to_tensor(train_configs)
         train_y = self.optimization_problem.evaluator.evaluate_batch(evaluation_datasets,return_tensor=True)
 
@@ -116,7 +114,6 @@ class Optimizer:
                 logger.error(f"  Tensor shape: {best_config_tensor.shape}")
                 logger.error(f"  Tensor values: {best_config_tensor}")
         
-        # TODO:: return best 
         if best_one:
             best_configs = list(best_configs.values())[0] # get first value
         return best_configs

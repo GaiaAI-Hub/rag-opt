@@ -1,6 +1,6 @@
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStore
-from typing import Literal, Any, Optional
+from typing import Any, Optional
 from pydantic import PrivateAttr, Field
 from typing_extensions import override
 from rag_opt._config import SearchType
@@ -124,7 +124,7 @@ class Retriever(BaseRetriever):
 
     def _retrieve_semantic(self, query: str, k: int = 4) -> list[Document]:
         """Retrieve using vector similarity"""
-        search_kwargs = {"k": k, } # **self.search_kwargs TODO:: check this 
+        search_kwargs = {"k": k, } 
         
         if self.search_type == "mmr":
             return self._vector_store.max_marginal_relevance_search(
@@ -232,43 +232,3 @@ class Retriever(BaseRetriever):
     ) -> list[Document]:
         """LangChain retriever interface implementation"""
         return self.retrieve(query)
-
-
-# Usage example
-if __name__ == "__main__":
-    # Example with different search strategies
-    
-    # 1. Semantic search (similarity)
-    # retriever = Retriever(
-    #     vector_store=my_vector_store,
-    #     search_type="similarity",
-    #     k=5
-    # )
-    
-    # 2. MMR search (diversity)
-    # retriever = Retriever(
-    #     vector_store=my_vector_store,
-    #     search_type="mmr",
-    #     k=5,
-    #     fetch_k=20,
-    #     lambda_mult=0.5
-    # )
-    
-    # 3. BM25 lexical search
-    # retriever = Retriever(
-    #     vector_store=my_vector_store,
-    #     search_type="bm25",
-    #     corpus_documents=documents,
-    #     k=5
-    # )
-    
-    # 4. Hybrid search
-    # retriever = Retriever(
-    #     vector_store=my_vector_store,
-    #     search_type="hybrid",
-    #     corpus_documents=documents,
-    #     hybrid_weights={"semantic": 0.6, "lexical": 0.4},
-    #     k=5
-    # )
-    
-    pass

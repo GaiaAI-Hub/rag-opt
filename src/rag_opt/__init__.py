@@ -4,6 +4,7 @@ from langchain_core.runnables import Runnable
 from langchain.chat_models import init_chat_model as _langchain_init_chat_model
 from rag_opt.rag import init_vectorstore, init_reranker
 from typing import Any, Union, Optional
+from rag_opt._config import RAGConfig
 from loguru import logger
 import os 
 
@@ -64,5 +65,6 @@ __all__ =[
     "init_embeddings",
     "init_chat_model",
     "init_vectorstore",
-    "init_reranker"
+    "init_reranker",
+    "RAGConfig"
 ]

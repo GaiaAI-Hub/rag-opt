@@ -1,7 +1,7 @@
 from typing_extensions import Any, Optional, Doc, Annotated, TypeAlias, Literal, Callable, TypeVar
 from concurrent.futures import  Future, as_completed, Executor
 from rag_opt.dataset import TrainDataset, EvaluationDataset
-from rag_opt.rag import GAIARAG, BaseReranker
+from rag_opt.rag import RAGWorkflow, BaseReranker
 from rag_opt import init_vectorstore, init_embeddings, init_reranker, init_chat_model
 from langchain.chat_models.base import BaseChatModel
 from langchain.schema.embeddings import Embeddings
@@ -23,7 +23,7 @@ class RAGPipelineManager:
     """
     Manages loading and caching of RAG components (LLMs, embeddings, vector stores, rerankers).
     
-    Optimizes GAIARAG instantiation during Bayesian Optimization by caching components
+    Optimizes RAGWorkflow instantiation during Bayesian Optimization by caching components
     and supporting parallel initialization.
     """
 
@@ -306,8 +306,8 @@ class RAGPipelineManager:
         documents: Optional[list[Document]] = None,
         retrieval_config: Optional[dict] = None,
         initialize: bool = False
-    ) -> GAIARAG:
-        """Create GAIARAG instance from configuration using cached components."""
+    ) -> RAGWorkflow:
+        """Create RAGWorkflow instance from configuration using cached components."""
         # Initialize core components
         llm = self.get_llm(
             model=config.llm.model,
@@ -342,7 +342,7 @@ class RAGPipelineManager:
             api_key=config.vector_store.api_key,
             initialize=initialize
         )
-        return GAIARAG(
+        return RAGWorkflow(
             embeddings=embeddings,
             vector_store=vector_store,
             llm=llm,
@@ -354,8 +354,8 @@ class RAGPipelineManager:
     def create_rag_instance_by_sample(self, 
                                         sampler_type: SamplerType = SamplerType.SOBOL,
                                         documents: Optional[list[Document]] = None, 
-                                        retrieval_config: Optional[dict] = None) -> GAIARAG:
-        """Create GAIARAG instance from a sampled search space config."""
+                                        retrieval_config: Optional[dict] = None) -> RAGWorkflow:
+        """Create RAGWorkflow instance from a sampled search space config."""
         sample = self._search_space.sample(n_samples=1,sampler_type=sampler_type)
         if not sample:
             logger.error("No sample found in search space")

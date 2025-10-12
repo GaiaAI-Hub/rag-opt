@@ -1096,7 +1096,7 @@ files = [
 
 [[package]]
 name = "fastmobo"
-version = "0.1.1"
+version = "0.1.3"
 requires_python = ">=3.11"
 summary = "Multi-objective Bayesian optimization Framework (Botorch Wrapper)"
 groups = ["default"]
@@ -1106,8 +1106,8 @@ dependencies = [
     "matplotlib>=3.10.6",
 ]
 files = [
-    {file = "fastmobo-0.1.1-py3-none-any.whl", hash = "sha256:5ce83f41772f925b726d1dfd9edbcdbc33bf04b040e1328fee5894fae915a929"},
-    {file = "fastmobo-0.1.1.tar.gz", hash = "sha256:bfb8f8c86c63edef4a2cfac7095907a7c22996c922f9e7d6d71b27d36c5d98b2"},
+    {file = "fastmobo-0.1.3-py3-none-any.whl", hash = "sha256:cbb9112ce5f287a84955958cd6141d7626ffc3ee23596ff5b1cd265efdee04f4"},
+    {file = "fastmobo-0.1.3.tar.gz", hash = "sha256:afdba76a141ee6865b635849f1623cf8cdf93e0d0fff03e78808b497a548b0c1"},
 ]
 
 [[package]]
