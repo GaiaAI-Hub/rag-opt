@@ -16,11 +16,12 @@ def init_chat_model(
     api_key: Optional[str] = None,
     **kwargs: Any,
 ) -> Union[Embeddings, Runnable[Any, list[float]]]:
-    logger.success(f"model >> {model}")
+    
     if model_provider == "sentence-transformers":
         model_provider = "huggingface"
         logger.warning("Using HuggingFace provider for sentence transformer models")
     
+    out = None
     if model_provider == "huggingface":
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = api_key
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -33,33 +34,40 @@ def init_chat_model(
                 repetition_penalty=1.03,
                 huggingfacehub_api_token=api_key
             )
-        return ChatHuggingFace(llm=llm)
+       
+        out =  ChatHuggingFace(llm=llm)
+    else:
+        out = _langchain_init_chat_model(model, model_provider=model_provider,api_key=api_key, **kwargs)
 
-    return _langchain_init_chat_model(model, model_provider=model_provider,api_key=api_key, **kwargs)
+    logger.success(f"{model} LLM Loaded successfully")
+    return out 
 
 def init_embeddings(
     model: str,
     *,
-    provider: Optional[str] = None,
+    model_provider: Optional[str] = None,
     api_key: Optional[str] = None,
     **kwargs: Any,
 ) -> Union[Embeddings, Runnable[Any, list[float]]]:
-    if provider == "sentence-transformers":
-        provider = "huggingface"
+    if model_provider == "sentence-transformers":
+        model_provider = "huggingface"
         logger.warning("Using HuggingFace provider for sentence transformer models")
     
-    if provider == "huggingface":
+    out = None
+    if model_provider == "huggingface":
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = api_key
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         from langchain_huggingface import HuggingFaceEmbeddings
-        return HuggingFaceEmbeddings(
+
+        out =  HuggingFaceEmbeddings(
                 model_name=model,
                 model_kwargs={"device": "cpu"}, # TODO:: make this configurable
                 encode_kwargs={"normalize_embeddings": False},
             )
-    
-
-    return _langchain_init_embeddings(model, provider=provider,api_key=api_key, **kwargs)
+    else:
+        out = _langchain_init_embeddings(model, provider=model_provider,api_key=api_key, **kwargs)
+    logger.success(f"{model} Embeddings Loaded successfully")
+    return out 
 
 __all__ =[
     "init_embeddings",

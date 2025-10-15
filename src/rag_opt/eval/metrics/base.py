@@ -1,5 +1,5 @@
 from langchain_core.prompts import PromptTemplate, get_template_variables
-from typing_extensions import Annotated, Doc, Optional, Any, Literal
+from typing_extensions import Annotated, Doc, Optional, Any
 from rag_opt.dataset import EvaluationDataset
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -36,6 +36,10 @@ def _camel_to_snake(name: str) -> str:
     s2 = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1)
     return s2.lower()
 
+
+
+EPSILON_OFFSET = 1e-6 # for numerical stability
+
 class BaseMetric(ABC):
     """Base class for all metrics
     Note: ALl Metrics will be llm-based (which means llm will be the main source of truth)
@@ -46,7 +50,7 @@ class BaseMetric(ABC):
     _prompt_template: str = None
     is_llm_based: bool = True
     negate: Annotated[bool, "if True the metric value will be negated, which means we need to minimize this metric"] = False
-    worst_value: Annotated[float, "Worst-case value for this metric (for reference point estimation)"] = 0.0
+    _worst_value: Annotated[float, "Worst-case value for this metric (for reference point estimation)"] = EPSILON_OFFSET
 
     def __init__(self, 
                  llm: Annotated[Optional[RAGLLM], Doc("the llm to be used in the dataset evaluation process")] = None,
@@ -72,7 +76,9 @@ class BaseMetric(ABC):
     @property
     def worst_value(self) -> float:
         """Worst-case value (per query) for this metric (for reference point estimation)"""
-        return 0.0 
+        if self._worst_value is not None:
+            return self._worst_value
+        return EPSILON_OFFSET
     
     @property
     def _prompt_template(self) -> str:
@@ -93,10 +99,10 @@ class BaseMetric(ABC):
         """ Main Evaluation Logic"""
         scores =  self._evaluate(dataset, **kwargs)
         if not scores:
-            return MetricResult(name=self.name, value=0, category=self.category)
+            return MetricResult(name=self.name, value=self.worst_value, category=self.category)
         
         return MetricResult(name=self.name, 
-                            value=sum(scores)/len(scores), 
+                            value=sum(scores)/len(scores) - EPSILON_OFFSET * (1 if self.negate else -1) , 
                             category=self.category, 
                             metadata={"scores": scores})
         

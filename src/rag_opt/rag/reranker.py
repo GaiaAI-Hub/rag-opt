@@ -1,5 +1,6 @@
 from langchain_core.documents import BaseDocumentCompressor, Document
 from abc import ABC, abstractmethod
+from loguru import logger
 from typing import Optional
 
 
@@ -248,4 +249,6 @@ def init_reranker(
     if api_key:
         config["api_key"] = api_key
     
-    return reranker_class(**config)
+    reranker = reranker_class(**config)
+    logger.success(f"{provider} Reranker Loaded successfully")
+    return reranker

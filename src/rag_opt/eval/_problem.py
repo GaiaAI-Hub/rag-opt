@@ -8,7 +8,7 @@ from rag_opt.dataset import TrainDataset
 from rag_opt._config import RAGConfig
 from functools import cached_property
 from langchain.schema import Document
-from rag_opt.llm import RAGLLM
+from rag_opt.llm import RAGLLM,RAGEmbedding
 from loguru import logger
 import torch
 
@@ -21,15 +21,18 @@ class RAGOptimizationProblem:
         rag_pipeline_manager: Annotated[RAGPipelineManager, Doc("This service will be used to sample the search space and create RAG instances during optimization")], 
         evaluator_llm: Annotated[RAGLLM | str, Doc("the llm to be used in the metric evaluation process in the objective function")]=None,
         *, 
+        evaluator_embedding: Annotated[RAGEmbedding | str, Doc("the embedding to be used in the metric evaluation process in the objective function")]=None,
         evaluator: Annotated[RAGEvaluator, Doc("Evaluator used to evaluate the current generated response based on specific metrics")]=None 
     ):
         if not evaluator_llm and not evaluator:
             logger.error(f"You have to provide either evaluator or evaluator_llm")
             raise ValueError(f"You have to provide either evaluator or evaluator_llm")
         
-        self.evaluator = evaluator or RAGEvaluator(evaluator_llm=evaluator_llm)
+        self.evaluator = evaluator or RAGEvaluator(evaluator_llm=evaluator_llm, evaluator_embedding=evaluator_embedding)
         self.rag_pipeline_manager = rag_pipeline_manager
         self.train_dataset = train_dataset
+
+        self.problem: FastMoboProblem = None # fastmobo problem instance 
     
     def generate_initial_data(self,n_samples: int=20, **kwargs) -> tuple[list[RAGConfig], list[EvaluationDataset]]:
         """ prepare train_x, train_y for the optimization process"""
@@ -55,6 +58,7 @@ class RAGOptimizationProblem:
         """Define reference point for hypervolume calculation"""
         ref_values = self.evaluator.ref_point
         return ref_values.detach().clone().double()
+
     
     @cached_property
     def objectives(self) -> list[str]:
@@ -90,8 +94,8 @@ class RAGOptimizationProblem:
         
     def create_fastmobo_problem(self) -> FastMoboProblem:
         """Create FastMoBo problem instance"""
-        noise_std = torch.tensor([0.1] * len(self.objectives), dtype=torch.double)
-        return FastMoboProblem(
+        noise_std = torch.tensor([0.1] * len(self.objectives), dtype=torch.float)
+        self.problem = FastMoboProblem(
             objective_func=self.objective_function,
             bounds=self.bounds,
             ref_point=self.ref_point,
@@ -100,4 +104,5 @@ class RAGOptimizationProblem:
             # dim=len(self.bounds),
             negate=False  # NOTE:: we do negation internally per metric like cost , latency
         )
+        return self.problem
 

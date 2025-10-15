@@ -4,7 +4,7 @@ from langchain.schema import Document
 from dataclasses import dataclass
 from enum import Enum
 import tiktoken
-
+from loguru import logger
 
 @dataclass
 class LLMTokenCost:
@@ -185,7 +185,7 @@ class PricingRegistry:
     def calculate_llm_cost(cls, provider: str, model: str, usage: UsageMetadata) -> Optional[float]:
         """Calculate LLM cost for usage"""
         pricing = cls.get_llm_cost(provider, model)
-        return pricing.cost_for(usage) if pricing else None
+        return pricing.cost_for(usage) if pricing else 0.0
     
     # ---------------- Embedding ----------------
     @classmethod

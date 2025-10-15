@@ -1,8 +1,8 @@
 from typing_extensions import Any, Optional, Doc, Annotated, TypeAlias, Literal, Callable, TypeVar
+from rag_opt import init_vectorstore, init_embeddings, init_reranker, init_chat_model
 from concurrent.futures import  Future, as_completed, Executor
 from rag_opt.dataset import TrainDataset, EvaluationDataset
 from rag_opt.rag import RAGWorkflow, BaseReranker
-from rag_opt import init_vectorstore, init_embeddings, init_reranker, init_chat_model
 from langchain.chat_models.base import BaseChatModel
 from langchain.schema.embeddings import Embeddings
 from rag_opt.search_space import RAGSearchSpace
@@ -52,6 +52,7 @@ class RAGPipelineManager:
         # Load all RAG components (llms, embeddings,...) 
         # before starting optimization (preferable for small search space)
         if eager_load:
+            logger.debug("RAGPipelineManager: Loading all RAG Component")
             self._load_all_components()
     
     @classmethod
@@ -114,6 +115,15 @@ class RAGPipelineManager:
             if model_name in key and "llms" in key:
                 return self._registry[key]
         return None
+    
+    def get_embedding_by_model_name(self, model_name: str) -> Embeddings:
+        if not model_name:
+            return None
+        for key in self._registry.keys():
+            if model_name in key and "embeddings" in key:
+                return self._registry[key]
+        return None
+
 
     def get_embeddings(self, provider: str, model: str, api_key: Optional[str] = None) -> Embeddings:
         """Get or create embeddings instance."""
@@ -124,11 +134,10 @@ class RAGPipelineManager:
         
         cache_key = self._build_cache_key("embeddings", provider=provider, model=model)
 
-        # TODO:: manually handle non support providers in langchain init_embedding 
         return self._get_or_create_component(
             cache_key, 
             init_embeddings, 
-            provider=provider, 
+            model_provider=provider, 
             model=model, 
             api_key=api_key
         )
@@ -186,6 +195,24 @@ class RAGPipelineManager:
                         model=model, 
                         provider=llm_config.provider, 
                         api_key=llm_config.api_key
+                    )
+
+    def initiate_embedding(self, model_name:str=None) -> Embeddings:
+        """ Helper method to get a random embedding to be used in evaluation process """
+        embedding = self.get_embedding_by_model_name(model_name)
+        if not embedding:
+            if not self._search_space.embedding.choices:
+                logger.error("No Embeddings found in search space")
+                raise ValueError("No Embeddings found in search space")
+            
+            for embedding_config in self._search_space.embedding.choices.values():
+                for model in embedding_config.models:
+                    if not (model and embedding_config.provider):
+                        continue
+                    return self.get_embeddings(
+                        provider=embedding_config.provider,
+                        model=model,
+                        api_key=embedding_config.api_key
                     )
             
 
@@ -330,10 +357,7 @@ class RAGPipelineManager:
             reranker = None
         
       
-        index_name = (
-            config.vector_store.index_name or 
-            f"gaia_index_{config.vector_store.provider}_{uuid.uuid4()}"
-        )
+        index_name = config.vector_store.index_name
         vector_store = self.get_vector_store(
             provider=config.vector_store.provider, 
             embeddings=embeddings, 
@@ -347,6 +371,16 @@ class RAGPipelineManager:
             vector_store=vector_store,
             llm=llm,
             reranker=reranker, 
+
+            # TODO:: create wrapper around models(llms,embedding,..) which includes provider, model names
+            llm_provider_name=config.llm.provider,
+            llm_model_name=config.llm.model,
+            embedding_provider_name=config.embedding.provider,
+            embedding_model_name=config.embedding.model,
+            reranker_provider_name=config.reranker.provider if config.reranker else None, 
+            reranker_model_name=config.reranker.model if config.reranker else None,
+            vector_store_provider_name=config.vector_store.provider,
+
             retrieval_config=retrieval_config or {"search_type": config.search_type, "k": config.k},
             corpus_documents=documents # needed for hybrid search
         )

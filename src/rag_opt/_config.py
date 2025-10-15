@@ -1,4 +1,4 @@
-from typing import Any, Union, Optional, Literal,  NamedTuple
+from typing import Any, Union, Optional, Literal
 from rag_opt.rag._pricing import (LLMTokenCost, 
                                   EmbeddingCost, 
                                   RerankerCost, 
@@ -7,14 +7,15 @@ from rag_opt.rag._pricing import (LLMTokenCost,
                                 )
 from dataclasses import dataclass, asdict
 import json 
+import time
+import os 
 
 VectorStoreProvider = Literal["faiss", "chroma", "pinecone", "weaviate"]
-SearchType = Literal["similarity",   "mmr", "bm25", "tfidf", "hybrid"]
+SearchType = Literal["similarity", "mmr", "bm25", "tfidf", "hybrid"]
 LLMProvider = Literal["openai", "anthropic", "huggingface", "azure", "deepseek"]
 EmbeddingProvider = Literal["openai", "huggingface", "sentence-transformers", "claude"]
 RerankerType = Literal["cross_encoder", "colbert", "bge"]
 SearchSpaceType = Literal["continuous", "categorical", "boolean"]
-
 
 @dataclass
 class LLMConfig:
@@ -23,7 +24,7 @@ class LLMConfig:
     models: list[str]
     api_key: Optional[str] = None
     api_base: Optional[str] = None
-    pricing: Optional[dict[str, LLMTokenCost]] = None  # model_name -> pricing
+    pricing: Optional[dict[str, LLMTokenCost]] = None
 
     def __post_init__(self):
         """Validate LLM configuration"""
@@ -54,13 +55,12 @@ class EmbeddingConfig:
     models: list[str]
     api_key: Optional[str] = None
     api_base: Optional[str] = None
-    pricing: Optional[dict[str, EmbeddingCost]] = None  # model_name -> pricing
+    pricing: Optional[dict[str, EmbeddingCost]] = None
 
     def __post_init__(self):
         """Validate embedding configuration"""
         if not self.models:
             raise ValueError("Embedding model cannot be empty")
-        # Initialize pricing with zeros if not provided
         if self.pricing is None:
             self.pricing = {model: EmbeddingCost() for model in self.models}
 
@@ -71,7 +71,7 @@ class RerankerConfig:
     models: list[str]
     api_key: Optional[str] = None
     api_base: Optional[str] = None
-    pricing: Optional[dict[str, RerankerCost]] = None  # model_name -> pricing
+    pricing: Optional[dict[str, RerankerCost]] = None
 
     def __post_init__(self):
         """Validate reranker configuration"""
@@ -85,26 +85,43 @@ class RerankerConfig:
                 ) for model in self.models
             }
 
-class AIModel(NamedTuple):
-    provider: EmbeddingProvider
+@dataclass
+class AIModel:
+    provider: Union[EmbeddingProvider, LLMProvider, RerankerType]
     model: str
-    api_key: Optional[str]
-    api_base: Optional[str]
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
     pricing: Optional[Union[LLMTokenCost, EmbeddingCost, RerankerCost]] = None
 
-class EmbeddingModel(AIModel):
+@dataclass
+class EmbeddingModel:
     """Embedding model configuration"""
-    pass
+    provider: EmbeddingProvider
+    model: str
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
+    pricing: Optional[EmbeddingCost] = None
 
-class LLMModel(AIModel):
+@dataclass
+class LLMModel:
     """LLM model configuration"""
-    pass
+    provider: LLMProvider
+    model: str
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
+    pricing: Optional[LLMTokenCost] = None
 
-class RerankerModel(AIModel):
+@dataclass
+class RerankerModel:
     """Reranker model configuration"""
-    pass
+    provider: RerankerType
+    model: str
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
+    pricing: Optional[RerankerCost] = None
 
-class VectorStoreItem(NamedTuple):
+@dataclass
+class VectorStoreItem:
     provider: VectorStoreProvider
     index_name: Optional[str] = None
     api_key: Optional[str] = None
@@ -124,30 +141,71 @@ class RAGConfig:
     vector_store: VectorStoreItem
     use_reranker: Optional[bool] = False
     reranker: Optional[RerankerModel] = None
-
+    
+    @staticmethod
+    def _remove_sensitive_fields(data: dict) -> dict:
+        """Recursively remove sensitive fields from nested dictionaries"""
+        if not isinstance(data, dict):
+            return data
+        
+        cleaned = {}
+        for key, value in data.items():
+            if key in ("api_key", "pricing"):
+                continue
+            
+            if isinstance(value, dict):
+                cleaned[key] = RAGConfig._remove_sensitive_fields(value)
+            elif value:
+                cleaned[key] = value
+        
+        return cleaned
+    
     @classmethod
     def from_json(cls, file_path: str):
+        """Load RAG configuration from JSON file"""
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        
+        # Reconstruct nested dataclass objects
+        if "embedding" in data and isinstance(data["embedding"], dict):
+            data["embedding"] = EmbeddingModel(**data["embedding"])
+        if "llm" in data and isinstance(data["llm"], dict):
+            data["llm"] = LLMModel(**data["llm"])
+        if "vector_store" in data and isinstance(data["vector_store"], dict):
+            data["vector_store"] = VectorStoreItem(**data["vector_store"])
+        if "reranker" in data and data["reranker"] and isinstance(data["reranker"], dict):
+            data["reranker"] = RerankerModel(**data["reranker"])
+        
         return cls(**data)
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-
-    def to_dict(self):
-        return asdict(self)
-
+    
+    def to_json(self, path: str = "./best_config.json"):
+        """Save configuration to JSON file"""
+        if os.path.exists(path):
+            base = path.replace(".json", "")
+            path = f"{base}-{int(time.time())}.json"
+        elif not path.endswith(".json"):
+            path += ".json"
+        
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2)
+        
+    
+    def to_dict(self, remove_sensitive: bool = True) -> dict:
+        """Convert configuration to dictionary"""
+        data = asdict(self)
+        return self._remove_sensitive_fields(data) if remove_sensitive else data
+    
     def __repr__(self):
-        return f"""
-                chunk_size={self.chunk_size},
-                max_tokens={self.max_tokens},
-                chunk_overlap={self.chunk_overlap},
-                search_type={self.search_type},
-                vector_store={self.vector_store},
-                embedding={self.embedding},
-                k={self.k},
-                temperature={self.temperature},
-                use_reranker={self.use_reranker},
-                reranker={self.reranker},
-                llm={self.llm}
-            """
+        return f"""RAGConfig(
+            chunk_size={self.chunk_size},
+            max_tokens={self.max_tokens},
+            chunk_overlap={self.chunk_overlap},
+            search_type={self.search_type},
+            vector_store={self.vector_store.provider},
+            embedding={self.embedding.model},
+            k={self.k},
+            temperature={self.temperature},
+            use_reranker={self.use_reranker},
+            reranker={self.reranker.model if self.reranker else None},
+            llm={self.llm.model}
+        )"""

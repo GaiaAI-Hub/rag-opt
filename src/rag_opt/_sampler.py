@@ -69,7 +69,7 @@ class SamplingMixin(ABC):
         
         for i, (_, config) in enumerate(expanded_params.items()):
             bounds = config.get("bounds")
-            dtype = torch.float32 if config.get("dtype") == float else torch.int32
+            dtype = torch.float64 if config.get("dtype") == float else torch.int32
             if bounds:
                 lower, upper = bounds
                 samples[:, i] = torch.tensor([self._clip_value(v.item(), lower, upper, sample_type=sample_type) 
@@ -124,7 +124,7 @@ class SamplingMixin(ABC):
                     logger.warning(f"Unknown search space type: {search_space_type}")
                     raise ValueError(f"Unknown search space type: {search_space_type}")
         
-        bounds_tensor = torch.tensor(bounds, dtype=torch.float32).T if bounds else torch.empty(0, dtype=torch.float32)
+        bounds_tensor = torch.tensor(bounds, dtype=torch.float64).T if bounds else torch.empty(0, dtype=torch.float64)
         return bounds_tensor
     
     def config_to_tensor(self, config: RAGConfig) -> torch.Tensor:
@@ -141,7 +141,7 @@ class SamplingMixin(ABC):
         expanded_params = self._get_expanded_hyperparameters()
         base_params = self._get_hyperparameters()
         
-        sample = torch.zeros(len(expanded_params), dtype=torch.float32)
+        sample = torch.zeros(len(expanded_params), dtype=torch.float64)
         param_idx = 0
         
         for param_name, param_config in base_params.items():

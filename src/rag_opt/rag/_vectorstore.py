@@ -34,66 +34,68 @@ def init_vectorstore(
         initialize: if True means this is used to load the vectorstore for registery (could skip intializing in case of error)
         **kwargs: Provider-specific parameters
     """
-    provider = provider.lower()
-
+    
     try:
         embedding_dim = len(embeddings.embed_query("test query"))
     except Exception as e:
         logger.warning(f"Could not determine actual embedding dimension: {e}. Defaulting to 768.")
         embedding_dim = 768
 
+    provider = provider.lower()
+    index_name = f"{kwargs.get('index_name', 'ragopt-index-') or kwargs.get('collection_name', 'ragopt-collection-')}{embedding_dim}"
+    
+    out = None
     if provider == "faiss":
         if documents:
-            return FAISS.from_documents(documents, embeddings)
+            out =  FAISS.from_documents(documents, embeddings)
         else:
             # Create empty FAISS index with correct dimension
             index = faiss.IndexFlatL2(embedding_dim)
-            return FAISS(
+            out = FAISS(
                 embedding_function=embeddings,
                 index=index,
                 docstore=InMemoryDocstore({}),
                 index_to_docstore_id={}
             )
+            
 
     elif provider == "chroma":
         persist_directory = kwargs.get("persist_directory", "./chroma_db")
-        collection_name = kwargs.get("collection_name", "gaia")
-        collection_name += f"-{embedding_dim}"
+        collection_name = index_name
 
         if documents:
-            return Chroma.from_documents(
+
+            out = Chroma.from_documents(
                 documents,
                 embeddings,
                 persist_directory=persist_directory,
                 collection_name=collection_name
             )
         else:
-            return Chroma(
+            out = Chroma(
                 embedding_function=embeddings,
                 collection_name=collection_name,
                 persist_directory=persist_directory
             )
 
+
     elif provider == "pinecone":
         from langchain_pinecone import Pinecone
 
-        index_name = kwargs.get("index_name", "gaia")
         if api_key:
             os.environ["PINECONE_API_KEY"] = api_key
-
-        # Include embedding dimension in index name
-        index_name = f"{index_name}-{embedding_dim}"
 
         _create_pinecone_index_if_not_exists(index_name=index_name, api_key=api_key, dimension=embedding_dim,initialize=initialize)
 
         if documents:
-            return Pinecone.from_documents(documents, embeddings, index_name=index_name)
+            out = Pinecone.from_documents(documents, embeddings, index_name=index_name)
         else:
-            return Pinecone.from_existing_index(index_name, embeddings)
+            out =  Pinecone.from_existing_index(index_name, embeddings)
+
 
     elif provider == "qdrant":
         url = kwargs.get("url", "http://localhost:6333")
-        collection_name = kwargs.get("collection_name", "default")
+        collection_name = index_name
 
         # Initialize client
         if url == ":memory:" or kwargs.get("in_memory", False):
@@ -112,14 +114,14 @@ def init_vectorstore(
             pass
 
         if documents:
-            return QdrantVectorStore.from_documents(
+            out = QdrantVectorStore.from_documents(
                 documents,
                 embeddings,
                 client=client,
                 collection_name=collection_name
             )
         else:
-            return QdrantVectorStore(
+            out = QdrantVectorStore(
                 client=client,
                 collection_name=collection_name,
                 embeddings=embeddings
@@ -127,8 +129,14 @@ def init_vectorstore(
 
     else:
         raise ValueError(f"Unsupported vector store provider: {provider}")
+    
+    _log_loading(provider, index_name)
+    return out
 
 
+
+def _log_loading(vector_store_name: str, index_name: str) -> None:
+    logger.success(f"{vector_store_name} Loaded successfully, working with index: {index_name}")
 
 def _create_pinecone_index_if_not_exists(index_name:str, api_key:str, dimension:int, initialize:bool) -> None:
     """ will try to create the index if it does not exist (only in case u didnt exceed the limit) other than that will skip and load later"""
