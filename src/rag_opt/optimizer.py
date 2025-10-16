@@ -10,6 +10,7 @@ from rag_opt._manager import RAGPipelineManager
 from rag_opt.dataset import TrainDataset
 from rag_opt._config import RAGConfig
 from rag_opt.llm import RAGLLM, RAGEmbedding
+from rag_opt.eval.evaluator import RAGEvaluator
 
 
 AllowedAcq = Literal['qEHVI', 'qNEHVI', 'qNParEGO', 'Random']
@@ -29,7 +30,8 @@ class Optimizer:
         search_space: Annotated[Optional[RAGSearchSpace], Doc("RAG search space")] = None,
         verbose: Annotated[bool, Doc("Enable optimization logging")] = True,
         evaluator_llm: Annotated[Optional[RAGLLM | str], Doc("LLM for metric evaluation")] = None, 
-        evaluator_embedding: Annotated[Optional[RAGEmbedding | str], Doc("Embedding for metric evaluation")] = None
+        evaluator_embedding: Annotated[Optional[RAGEmbedding | str], Doc("Embedding for metric evaluation")] = None,
+        custom_evaluator: Annotated[Optional[RAGEvaluator], Doc("Custom evaluator")] = None
     ):
         """Initialize optimizer with configuration and optional custom components"""
         self.verbose = verbose
@@ -49,6 +51,8 @@ class Optimizer:
             evaluator_llm=self.evaluator_llm,
             evaluator_embedding=self.evaluator_embedding
         )
+        if custom_evaluator:
+            self.optimization_problem.evaluator = custom_evaluator
         self.mobo_optimizer = optimizer or self._initialize_optimizer(acquisition_functions=acquisition_functions)
     
     def _get_evaluator_llm(self, evaluator_llm: Optional[RAGLLM | str]) -> RAGLLM:

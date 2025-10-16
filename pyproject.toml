@@ -1,6 +1,6 @@
 [project]
 name = "rag-opt"
-version = "0.1.4"
+version = "0.1.5"
 description = "RAG workflow Optimizer based on Bayesian Optimization"
 authors = [
     {name = "abdelrahman abounida", email = "abdelrahmanaboneda@gmail.com"},
