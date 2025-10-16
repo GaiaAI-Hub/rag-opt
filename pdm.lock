@@ -5,7 +5,7 @@
 groups = ["default", "dev", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:33d7db3719cd578e8434c8287e90108c60806b22b7cdee1e6375fb3eae67d45c"
+content_hash = "sha256:efa44b2741400501e88c57093766edddc1f86a6b42b51a762360aa073d7e168b"
 
 [[metadata.targets]]
 requires_python = ">=3.11,<3.14"
@@ -1120,8 +1120,8 @@ dependencies = [
     "matplotlib>=3.10.6",
 ]
 files = [
-    {file = "fastmobo-0.1.4-py3-none-any.whl", hash = "sha256:cbb9112ce5f287a84955958cd6141d7626ffc3ee23596ff5b1cd265efdee04f4"},
-    {file = "fastmobo-0.1.4.tar.gz", hash = "sha256:afdba76a141ee6865b635849f1623cf8cdf93e0d0fff03e78808b497a548b0c1"},
+    {file = "fastmobo-0.1.4-py3-none-any.whl", hash = "sha256:65b2b4c0a230625eed11aa10d294037bbf0c3544496c26a3864b9f52ce77b5b9"},
+    {file = "fastmobo-0.1.4.tar.gz", hash = "sha256:48f288dc9ede7e1f26dea1d36e4194b0819988bf3b20a925982231b3d2292f9c"},
 ]
 
 [[package]]
