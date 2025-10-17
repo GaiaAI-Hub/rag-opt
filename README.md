@@ -8,8 +8,9 @@
 
 <p align="center">
   <a href="https://github.com/your-repo/publish"><img src="https://img.shields.io/badge/Publish-passing-brightgreen" alt="Publish passing"></a>
-  <a href="https://pypi.org/project/your-package/"><img src="https://img.shields.io/badge/PyPI-v0.1.5-brightgreen" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/your-package/"><img src="https://img.shields.io/badge/release-v0.1.5-orange" alt="PyPI version"></a>
   <a href="#"><img src="https://img.shields.io/badge/Python-3.11-blue" alt="Python 3.11"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License"></a>
 </p>
 
 ---
