@@ -42,7 +42,12 @@ class Optimizer:
 
         logger.debug("Initializing RAG Pipeline Manager")
         self.rag_pipeline_manager = RAGPipelineManager(search_space=self.search_space,verbose=verbose)
-        self.evaluator_llm = self._get_evaluator_llm(evaluator_llm)
+
+        if custom_evaluator:
+            self.evaluator_llm = custom_evaluator.evaluator_llm or self._get_evaluator_llm(evaluator_llm)
+        else:
+            self.evaluator_llm = self._get_evaluator_llm(evaluator_llm)
+            
         self.evaluator_embedding = self._get_evaluator_embedding(evaluator_embedding)
 
         self.optimization_problem = problem or RAGOptimizationProblem(
