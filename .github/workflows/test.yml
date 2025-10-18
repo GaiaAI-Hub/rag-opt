@@ -46,9 +46,9 @@ jobs:
 
       - name: Run unit tests
         run: pdm run pytest
-# git tag -a v0.1.5 -m "Release version 0.1.5"
-# git push origin v0.1.5
+# git tag -a v0.1.6 -m "Release version 0.1.6"
+# git push origin v0.1.6
 
 # delete
-# git push origin :refs/tags/v0.1.4
-# git tag -d v0.1.4
+# git push origin :refs/tags/v0.1.6
+# git tag -d v0.1.6
