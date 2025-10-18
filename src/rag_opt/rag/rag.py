@@ -29,6 +29,7 @@ class RAGWorkflow:
                  reranker: Optional[BaseReranker] = None,
                  retrieval_config: Optional[dict] = None,
                  *,
+                 lexical_cache_dir: Annotated[Optional[str], Doc("Path to the lexical retriever in case of using lexical search")] = None,
                  embedding_provider_name: Annotated[str, Doc("Name of the embedding provider like openai,...")] = None,
                  embedding_model_name: Annotated[str, Doc("Name of the embedding model like text-embedding-ada-002,...")] = None,
                  llm_provider_name: Annotated[str, Doc("Name of the llm provider like openai,...")] = None,
@@ -62,6 +63,7 @@ class RAGWorkflow:
         self.retrieval = Retriever(
             vector_store, 
             corpus_documents=kwargs.get("corpus_documents", None),
+            lexical_cache_dir=lexical_cache_dir,
             **retrieval_config
         )
         

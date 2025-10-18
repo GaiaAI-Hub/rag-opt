@@ -216,11 +216,11 @@ class DatasetGenerator:
         return None
     
     def generate(self, 
-                n: int = 10,
-                 *,
-                source_texts: Optional[list[str]] = None,
-                source_docs: Optional[list[Document]] = None,
-                batch_size: Optional[int] = None) -> TrainDataset:
+             n: int = 10,
+             *,
+             source_texts: Optional[list[str]] = None,
+             source_docs: Optional[list[Document]] = None,
+             batch_size: Optional[int] = None) -> TrainDataset:
         """Generate synthetic RAG dataset with question difficulty variance
         
         Args:
@@ -228,23 +228,30 @@ class DatasetGenerator:
             source_docs: Source documents for question generation  
             n: Number of questions to generate
             batch_size: Batch size for generation (default: adaptive)
-            difficulty_distribution: Custom difficulty distribution
             
         Returns:
-            RAGDataset: Generated dataset with varied question difficulties
+            TrainDataset: Generated dataset with varied question difficulties
         """
-        # Prepare data
         texts = self._prepare_source_data(source_texts, source_docs)
+        
+        if len(texts) < n:
+            logger.warning(f"Not enough source texts to generate {n} items (got {len(texts)}) - using all available texts {len(texts)}")
+            n = len(texts)
+        
+        texts = texts[:n]
+        
+        # Determine batch size
         batch_size = batch_size or min(max(1, n // 4), 5)
         difficulties = self._generate_difficulty_distribution(n)
-
-        # Generate in batches
-        all_items = []
-        text_batches = self._chunk_contexts(texts, batch_size)
-        difficulty_batches = self._chunk_contexts(difficulties, len(text_batches))
         
-        logger.info(f"Generating {len(text_batches)} batches of {batch_size} QA pairs")
-        logger.info(f"Difficulty distribution: {difficulties}")
+        # Split texts and difficulties into batches of batch_size
+        text_batches = self._chunk_contexts(texts, batch_size)
+        difficulty_batches = self._chunk_contexts(difficulties, batch_size)
+        
+        all_items = []
+        
+        logger.info(f"Generating {len(text_batches)} batches of up to {batch_size} QA pairs")
+        
         try:
             for i, (text_batch, diff_batch) in enumerate(zip(text_batches, difficulty_batches)):
                 logger.info(f"Generating batch {i+1}/{len(text_batches)}")
@@ -262,8 +269,13 @@ class DatasetGenerator:
         except Exception as e:
             logger.error(f"Error during generation: {e}")
         
+        # Ensure exactly n items
+        if len(all_items) > n:
+            all_items = all_items[:n]
+        
         logger.success(f"Generated {len(all_items)} QA pairs")
         return TrainDataset(items=all_items)
+
     
     async def agenerate(self,
                         n: int = 10,
@@ -273,4 +285,4 @@ class DatasetGenerator:
                         batch_size: Optional[int] = None,
                         **kwargs):
         """ async generate datasets"""
-        return await asyncio.to_thread(self.generate, **kwargs)
+        return await asyncio.to_thread(self.generate,n=n, source_texts=source_texts, source_docs=source_docs, batch_size=batch_size, **kwargs)

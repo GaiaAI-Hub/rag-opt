@@ -124,7 +124,7 @@ def init_vectorstore(
             out = QdrantVectorStore(
                 client=client,
                 collection_name=collection_name,
-                embeddings=embeddings
+                embedding=embeddings
             )
 
     else:

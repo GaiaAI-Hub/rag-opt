@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Optional, Any, Annotated, TypeVar, Generic, Literal
 from pydantic import BaseModel, Field
 from langchain.schema import Document
@@ -36,7 +37,7 @@ class EvaluationDatasetItem(BaseModel):
     question: str
     answer: str
     contexts: list[str]
-    ground_truth: Annotated[GroundTruth, Field(description="The expected answer and contexts for the question")]
+    ground_truth: Annotated[Optional[GroundTruth], Field(description="The expected answer and contexts for the question")] = None
     metadata: Annotated[Optional[dict[str, Any]], Field(default_factory=dict, description="Generated information from callbacks for evaluation metrics")] 
     
     @property
@@ -85,7 +86,7 @@ class DatbasetMixin(BaseModel, Generic[T]):
             f.write(self.model_dump_json(indent=2))
     
     @classmethod
-    def from_json(cls, path: str) -> T:
+    def from_json(cls, path: str) -> DatbasetMixin[T]:
         with open(path, 'r') as f:
             return cls.model_validate_json(f.read())
     

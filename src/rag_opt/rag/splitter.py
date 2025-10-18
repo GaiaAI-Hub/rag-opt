@@ -21,7 +21,7 @@ class BaseSplitter(ABC):
                 self.chunk_overlap = chunk_overlap
 
     @abstractmethod
-    def split(self,docs:list[Document]) -> list[Document]:
+    def split_documents(self,docs:list[Document]) -> list[Document]:
         if self.splitting_type == "characters":
             return self._split_characters(docs)
         elif self.splitting_type == "recursive_character":
@@ -34,19 +34,19 @@ class BaseSplitter(ABC):
                                               chunk_overlap=self.chunk_overlap, 
                                               separator="\n\n",
                                               strip_whitespace=False)
-        return text_splitter.split_documents(self.docs)
+        return text_splitter.split_documents(docs)
 
     def _split_recursive_character(self,docs:list[Document]):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size = self.chunk_size, 
                                                         chunk_overlap=self.chunk_overlap, 
                                                         length_function=len)
-        return text_splitter.split_documents(self.docs)
+        return text_splitter.split_documents(docs)
     
     def _split_tokens(self,docs:list[Document]):
         text_splitter = TokenTextSplitter(chunk_size = self.chunk_size, 
                                           chunk_overlap=self.chunk_overlap,
                                           encoding_name="cl100k_base")
-        return text_splitter.split_documents(self.docs)
+        return text_splitter.split_documents(docs)
 
     def _split_sementic(self,docs:list[Document]):
         raise NotImplementedError()
@@ -71,5 +71,7 @@ class Splitter(BaseSplitter):
         """
         super().__init__(splitting_type, chunk_size, chunk_overlap)
     
-    def split(self,docs:list[Document]) -> list[Document]:
-        return super().split(docs)
+    def split_documents(self,docs:list[Document]) -> list[Document]:
+        return super().split_documents(docs)
+
+    

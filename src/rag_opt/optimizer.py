@@ -9,7 +9,7 @@ from rag_opt.search_space import RAGSearchSpace
 from rag_opt._manager import RAGPipelineManager
 from rag_opt.dataset import TrainDataset
 from rag_opt._config import RAGConfig
-from rag_opt.llm import RAGLLM, RAGEmbedding
+from rag_opt.llm import RAGLLM, RAGEmbedding, Embeddings, BaseChatModel
 from rag_opt.eval.evaluator import RAGEvaluator
 
 
@@ -30,8 +30,9 @@ class Optimizer:
         search_space: Annotated[Optional[RAGSearchSpace], Doc("RAG search space")] = None,
         verbose: Annotated[bool, Doc("Enable optimization logging")] = True,
         evaluator_llm: Annotated[Optional[RAGLLM | str], Doc("LLM for metric evaluation")] = None, 
-        evaluator_embedding: Annotated[Optional[RAGEmbedding | str], Doc("Embedding for metric evaluation")] = None,
-        custom_evaluator: Annotated[Optional[RAGEvaluator], Doc("Custom evaluator")] = None
+        evaluator_embedding: Annotated[Optional[RAGEmbedding | Embeddings | str], Doc("Embedding for metric evaluation")] = None,
+        custom_evaluator: Annotated[Optional[RAGEvaluator], Doc("Custom evaluator")] = None,
+        custom_rag_pipeline_manager: Annotated[Optional[RAGPipelineManager], Doc("Custom RAG pipeline manager")] = None
     ):
         """Initialize optimizer with configuration and optional custom components"""
         self.verbose = verbose
@@ -41,7 +42,7 @@ class Optimizer:
         self.search_space = search_space or RAGSearchSpace.from_yaml(config_path)
 
         logger.debug("Initializing RAG Pipeline Manager")
-        self.rag_pipeline_manager = RAGPipelineManager(search_space=self.search_space,verbose=verbose)
+        self.rag_pipeline_manager = custom_rag_pipeline_manager or RAGPipelineManager(search_space=self.search_space,verbose=verbose)
 
         if custom_evaluator:
             self.evaluator_llm = custom_evaluator.evaluator_llm or self._get_evaluator_llm(evaluator_llm)
@@ -62,19 +63,23 @@ class Optimizer:
     
     def _get_evaluator_llm(self, evaluator_llm: Optional[RAGLLM | str]) -> RAGLLM:
         """Get or initialize evaluator LLM"""
-        if evaluator_llm is None:
-            return self.rag_pipeline_manager.initiate_llm()
-        if isinstance(evaluator_llm, RAGLLM):
+        if evaluator_llm is None or isinstance(evaluator_llm, str):
+            return self.rag_pipeline_manager.initiate_llm(evaluator_llm)
+        elif isinstance(evaluator_llm, RAGLLM | BaseChatModel):
             return evaluator_llm
-        return self.rag_pipeline_manager.initiate_llm(llm_name=evaluator_llm)
+        else:
+            logger.error(f"Invalid evaluator_llm type: {type(evaluator_llm)}")
+            raise ValueError(f"Invalid evaluator_llm type: {type(evaluator_llm)}")
 
     def _get_evaluator_embedding(self, evaluator_embedding: Optional[RAGEmbedding | str]) -> RAGEmbedding:
         """Get or initialize evaluator embedding"""
-        if evaluator_embedding is None:
-            return self.rag_pipeline_manager.initiate_embedding()
-        if isinstance(evaluator_embedding, RAGEmbedding):
+        if evaluator_embedding is None or isinstance(evaluator_embedding, str):
+            return self.rag_pipeline_manager.initiate_embedding(evaluator_embedding)
+        elif isinstance(evaluator_embedding, RAGEmbedding | Embeddings):
             return evaluator_embedding
-        return self.rag_pipeline_manager.initiate_embedding(embedding_name=evaluator_embedding)
+        else:
+            logger.error(f"Invalid evaluator_embedding type: {type(evaluator_embedding)}")
+            raise ValueError(f"Invalid evaluator_embedding type: {type(evaluator_embedding)}")
     
     def _initialize_optimizer(self, **kwargs) -> FastMobo:
         """Initialize FastMobo optimizer with initial evaluation data"""
@@ -140,7 +145,7 @@ class Optimizer:
             
             best_config_tensor = X[best_idx]
             
-            
+             
             try:
                 best_configs[acq_func] = self.search_space.tensor_to_config(best_config_tensor)
                 logger.debug(f"  Successfully decoded Best RAG config for {acq_func} acquisition function")
@@ -150,7 +155,7 @@ class Optimizer:
                 logger.error(f"  Tensor values: {best_config_tensor}")
         
         if best_one:
-            best_configs = list(best_configs.values())[0] 
+            best_configs = list(best_configs.values())[0]  if best_configs else None
 
         logger.success(f"Optimization complete. Hypervolumes: {result.hypervolumes}")
 
@@ -160,5 +165,8 @@ class Optimizer:
         
         if plot_pareto:
             result.plot_objectives(save_path=plot_pareto_path)
+        
+        if not best_configs:
+            logger.warning("optimization failed. No best configs found.")
         return best_configs
     

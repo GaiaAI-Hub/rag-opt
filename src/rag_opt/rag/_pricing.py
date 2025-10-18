@@ -46,7 +46,7 @@ class LLMTokenCost:
 @dataclass
 class EmbeddingCost:
     """Pricing for embedding models (per 1K tokens)"""
-    cost_per_1k_tokens: float
+    cost_per_1k_tokens: float = 0.0
 
     def cost_for(self, usage: UsageMetadata) -> float:
         """Calculate embedding cost from usage metadata"""

@@ -99,7 +99,7 @@ class RAGEvaluator(_NormalizerMixin):
     
     def __init__(
         self,
-        evaluator_llm: RAGLLM,
+        evaluator_llm: Optional[RAGLLM]=None,
         evaluator_embedding: Optional[RAGEmbedding] = None,
         metrics: Optional[list[BaseMetric]] = None,
         *,
@@ -110,7 +110,7 @@ class RAGEvaluator(_NormalizerMixin):
     ):
         """
         Args:
-            evaluator_llm: LLM instance for evaluation
+            evaluator_llm: LLM instance for Metrics evaluation 
             metrics: Custom metric instances to add
             objective_weights: Weight configuration per metric (only used for scalarization)
             auto_initialize_metrics: Whether to load default metrics
@@ -119,11 +119,15 @@ class RAGEvaluator(_NormalizerMixin):
         self._metrics: dict[str, BaseMetric] = {}
         self.objective_weights: dict[str, float] = {}
         
-        if auto_initialize_metrics:
+        if not metrics and auto_initialize_metrics:
             self._initialize_default_metrics(evaluator_llm,evaluator_embedding=evaluator_embedding, **kwargs)
         
         if metrics:
             self.add_metrics(metrics)
+
+        if not self._metrics:
+            logger.error("No metrics loaded")
+            raise ValueError("No metrics loaded")
         
         self._initialize_weights(objective_weights or DEFAULT_WEIGHTS)
         self._thread_executor = executor or _utils.get_shared_executor()
@@ -188,7 +192,8 @@ class RAGEvaluator(_NormalizerMixin):
         
         for name, weight in weights.items():
             if name not in self.metric_names:
-                logger.warning(f"Weight for unknown metric '{name}' will be ignored")
+                # logger.warning(f"Weight for unknown metric '{name}' will be ignored")
+                continue
             else:
                 self.objective_weights[name] = weight
         
