@@ -482,6 +482,7 @@ class Optimizer:
                 plot_pareto: bool = False,
                 plot_pareto_path: Optional[str] = None,
                 objective_names: Optional[list[str]] = None,
+                save_result: Optional[bool] = None,
                 **kwargs) -> dict[str, RAGConfig] | RAGConfig:
         """
         Run Bayesian optimization to find best RAG configuration
@@ -550,7 +551,8 @@ class Optimizer:
             logger.warning("optimization failed. No best configs found.")
 
         # save
-        self.save_result(result, "rag_opt_result.pkl.gz")
+        if save_result:
+            self.save_result(result, "rag_opt_result.pkl.gz")
         return best_configs
 
 
