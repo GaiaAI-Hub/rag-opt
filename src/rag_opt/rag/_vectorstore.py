@@ -8,13 +8,59 @@ from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from langchain_community.docstore.in_memory import InMemoryDocstore
-from loguru import logger 
+from loguru import logger
 import faiss
-import os 
+import os
 
 import warnings
 from langchain_core._api.deprecation import LangChainDeprecationWarning
 warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
+
+
+def _get_embedding_dimension(embeddings: Embeddings) -> int:
+    """
+    Cached function to get embedding dimension.
+    Only runs once per embeddings instance.
+    """
+    try:
+        return len(embeddings.embed_query("test"))
+    except Exception as e:
+        logger.warning(f"Could not determine embedding dimension: {e}. Using default 768.")
+        return 768
+
+
+def _create_pinecone_index(index_name: str, api_key: str, dimension: int, initialize: bool = False) -> None:
+    """Create Pinecone index if it doesn't exist"""
+    from pinecone import Pinecone, ServerlessSpec
+    
+    if not api_key:
+        raise ValueError("api_key is required for Pinecone")
+    
+    pc = Pinecone(api_key=api_key)
+    existing_indexes = pc.list_indexes().names()
+    
+    # Index already exists
+    if index_name in existing_indexes:
+        return
+    
+    # Check index limit
+    if len(existing_indexes) >= 5:
+        if initialize:
+            logger.warning("Pinecone free tier limit (5 indexes) reached. Index will be created at runtime.")
+            return
+        # Delete oldest index to make room
+        pc.delete_index(existing_indexes[-2])
+        logger.info(f"Deleted old Pinecone index to make room for {index_name}")
+    
+    # Create new index
+    logger.debug(f"Creating Pinecone index: {index_name}")
+    pc.create_index(
+        name=index_name,
+        dimension=dimension,
+        metric="cosine",
+        spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+    )
+
 
 def init_vectorstore(
     provider: str,
@@ -25,137 +71,136 @@ def init_vectorstore(
     **kwargs
 ) -> VectorStore:
     """
-    Initialize vector store similar to init_embeddings and init_chat_model
+    Initialize vector store with optimized setup.
     
     Args:
-        provider: Vector store provider name
+        provider: Vector store provider (faiss, chroma, pinecone, qdrant)
         embeddings: Embeddings instance
         documents: Optional documents to initialize with
-        initialize: if True means this is used to load the vectorstore for registery (could skip intializing in case of error)
+        api_key: API key for cloud providers
+        initialize: If True, skip errors during registry loading
         **kwargs: Provider-specific parameters
+    
+    Returns:
+        Initialized vector store instance
     """
-    
-    try:
-        embedding_dim = len(embeddings.embed_query("test query"))
-    except Exception as e:
-        logger.warning(f"Could not determine actual embedding dimension: {e}. Defaulting to 768.")
-        embedding_dim = 768
-
     provider = provider.lower()
-    index_name = f"{kwargs.get('index_name', 'ragopt-index-') or kwargs.get('collection_name', 'ragopt-collection-')}{embedding_dim}"
     
-    out = None
+    # Get embedding dimension (cached)
+    embedding_dim = _get_embedding_dimension(embeddings)
+    
+    # Generate index/collection name
+    base_name = kwargs.get('index_name') or kwargs.get('collection_name', 'ragopt')
+    index_name = f"{base_name}-{embedding_dim}"
+    
+    # Initialize vector store based on provider
     if provider == "faiss":
-        if documents:
-            out =  FAISS.from_documents(documents, embeddings)
-        else:
-            # Create empty FAISS index with correct dimension
-            index = faiss.IndexFlatL2(embedding_dim)
-            out = FAISS(
-                embedding_function=embeddings,
-                index=index,
-                docstore=InMemoryDocstore({}),
-                index_to_docstore_id={}
-            )
-            
-
-    elif provider == "chroma":
-        persist_directory = kwargs.get("persist_directory", "./chroma_db")
-        collection_name = index_name
-
-        if documents:
-
-            out = Chroma.from_documents(
-                documents,
-                embeddings,
-                persist_directory=persist_directory,
-                collection_name=collection_name
-            )
-        else:
-            out = Chroma(
-                embedding_function=embeddings,
-                collection_name=collection_name,
-                persist_directory=persist_directory
-            )
-
-
-    elif provider == "pinecone":
-        from langchain_pinecone import Pinecone
-
-        if api_key:
-            os.environ["PINECONE_API_KEY"] = api_key
-
-        _create_pinecone_index_if_not_exists(index_name=index_name, api_key=api_key, dimension=embedding_dim,initialize=initialize)
-
-        if documents:
-            out = Pinecone.from_documents(documents, embeddings, index_name=index_name)
-        else:
-            out =  Pinecone.from_existing_index(index_name, embeddings)
-
-
-    elif provider == "qdrant":
-        url = kwargs.get("url", "http://localhost:6333")
-        collection_name = index_name
-
-        # Initialize client
-        if url == ":memory:" or kwargs.get("in_memory", False):
-            client = QdrantClient(":memory:")
-        else:
-            client = QdrantClient(url=url)
-
-        # Create collection if it doesn't exist
-        try:
-            client.create_collection(
-                collection_name=collection_name,
-                vectors_config=VectorParams(size=embedding_dim, distance=Distance.COSINE),
-            )
-        except Exception:
-            # Collection might already exist
-            pass
-
-        if documents:
-            out = QdrantVectorStore.from_documents(
-                documents,
-                embeddings,
-                client=client,
-                collection_name=collection_name
-            )
-        else:
-            out = QdrantVectorStore(
-                client=client,
-                collection_name=collection_name,
-                embedding=embeddings
-            )
-
-    else:
-        raise ValueError(f"Unsupported vector store provider: {provider}")
+        vector_store = _init_faiss(embeddings, documents, embedding_dim)
     
-    _log_loading(provider, index_name)
-    return out
-
-
-
-def _log_loading(vector_store_name: str, index_name: str) -> None:
-    logger.success(f"{vector_store_name} Loaded successfully, working with index: {index_name}")
-
-def _create_pinecone_index_if_not_exists(index_name:str, api_key:str, dimension:int, initialize:bool) -> None:
-    """ will try to create the index if it does not exist (only in case u didnt exceed the limit) other than that will skip and load later"""
-    from pinecone import Pinecone, ServerlessSpec
-    if not api_key:
-        raise ValueError("api_key is required for Pinecone")
-    pc = Pinecone(api_key=api_key)
-
-    if not index_name in pc.list_indexes().names():
-        if len(pc.list_indexes().names()) >= 5:
-            if initialize:
-                logger.warning("Pinecone has reached the limit of 5 indexes. Skipping index creation and will create it during optimization runtime.")
-                return
-            else:
-                pc.delete_index(pc.list_indexes().names().pop(-2)) 
-        logger.debug(f"Creating Pinecone index: {index_name}")
-        pc.create_index(
-            name=index_name,
-            dimension=dimension,
-            metric="cosine",
-            spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+    elif provider == "chroma":
+        vector_store = _init_chroma(embeddings, documents, index_name, **kwargs)
+    
+    elif provider == "pinecone":
+        vector_store = _init_pinecone(embeddings, documents, index_name, api_key, embedding_dim, initialize)
+    
+    elif provider == "qdrant":
+        vector_store = _init_qdrant(embeddings, documents, index_name, embedding_dim, **kwargs)
+    
+    else:
+        raise ValueError(
+            f"Unsupported vector store: {provider}. "
+            f"Supported: faiss, chroma, pinecone, qdrant"
         )
+    
+    logger.success(f"{provider.upper()} loaded successfully → {index_name}")
+    return vector_store
+
+
+def _init_faiss(embeddings: Embeddings, documents: Optional[list[Document]], 
+                embedding_dim: int) -> FAISS:
+    """Initialize FAISS vector store"""
+    if documents:
+        return FAISS.from_documents(documents, embeddings)
+    
+    # Create empty index
+    index = faiss.IndexFlatL2(embedding_dim)
+    return FAISS(
+        embedding_function=embeddings,
+        index=index,
+        docstore=InMemoryDocstore({}),
+        index_to_docstore_id={}
+    )
+
+
+def _init_chroma(embeddings: Embeddings, documents: Optional[list[Document]],
+                 collection_name: str, **kwargs) -> Chroma:
+    """Initialize Chroma vector store"""
+    persist_directory = kwargs.get("persist_directory", "./chroma_db")
+    
+    if documents:
+        return Chroma.from_documents(
+            documents,
+            embeddings,
+            persist_directory=persist_directory,
+            collection_name=collection_name
+        )
+    
+    return Chroma(
+        embedding_function=embeddings,
+        collection_name=collection_name,
+        persist_directory=persist_directory
+    )
+
+
+def _init_pinecone(embeddings: Embeddings, documents: Optional[list[Document]],
+                   index_name: str, api_key: str, embedding_dim: int, 
+                   initialize: bool) -> VectorStore:
+    """Initialize Pinecone vector store"""
+    from langchain_pinecone import Pinecone
+    
+    if api_key:
+        os.environ["PINECONE_API_KEY"] = api_key
+    
+    # Create index if needed
+    _create_pinecone_index(index_name, api_key, embedding_dim, initialize)
+    
+    if documents:
+        return Pinecone.from_documents(documents, embeddings, index_name=index_name)
+    
+    return Pinecone.from_existing_index(index_name, embeddings)
+
+
+def _init_qdrant(embeddings: Embeddings, documents: Optional[list[Document]],
+                 collection_name: str, embedding_dim: int, **kwargs) -> QdrantVectorStore:
+    """Initialize Qdrant vector store"""
+    url = kwargs.get("url", "http://localhost:6333")
+    
+    # Initialize client
+    if url == ":memory:" or kwargs.get("in_memory", False):
+        client = QdrantClient(":memory:")
+    else:
+        client = QdrantClient(url=url)
+    
+    # Create collection if needed
+    try:
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=embedding_dim, distance=Distance.COSINE),
+        )
+    except Exception:
+        # Collection likely exists
+        pass
+    
+    if documents:
+        return QdrantVectorStore.from_documents(
+            documents,
+            embeddings,
+            client=client,
+            collection_name=collection_name
+        )
+    
+    return QdrantVectorStore(
+        client=client,
+        collection_name=collection_name,
+        embedding=embeddings
+    )

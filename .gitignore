@@ -5,13 +5,16 @@ __pycache__/
 venv
 **/chroma_db
 # C extensions
+**/.gaia_lexical_cache
 *.so
 **/**demo**.py
 **/src/rag_config.yaml
 **/main.py
 **/archive
 **/data
-**/final.py
+**/final*.py
+**/api
+
 rag_dataset.json
 **/demo3.py
 # Distribution / packaging

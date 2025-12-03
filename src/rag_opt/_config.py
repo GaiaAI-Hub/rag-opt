@@ -10,11 +10,12 @@ import json
 import time
 import os 
 
+# TODO:: we will be using vercel ai gateway as main provider so Later this should be legacy
 VectorStoreProvider = Literal["faiss", "chroma", "pinecone", "weaviate"]
 SearchType = Literal["similarity", "mmr", "bm25", "tfidf", "hybrid"]
-LLMProvider = Literal["openai", "anthropic", "huggingface", "azure", "deepseek"]
-EmbeddingProvider = Literal["openai", "huggingface", "sentence-transformers", "claude"]
-RerankerType = Literal["cross_encoder", "colbert", "bge"]
+LLMProvider = Literal["openai", "anthropic", "huggingface", "azure", "deepseek", "gateway"]
+EmbeddingProvider = Literal["openai", "huggingface", "sentence-transformers", "claude", "gateway"]
+RerankerType = Literal["cross_encoder", "colbert", "bge", "gateway"]
 SearchSpaceType = Literal["continuous", "categorical", "boolean"]
 
 @dataclass
@@ -29,7 +30,7 @@ class LLMConfig:
     def __post_init__(self):
         """Validate LLM configuration"""
         if not self.models:
-            raise ValueError("LLM model cannot be empty")
+            raise ValueError("LLM models cannot be empty")
         if self.pricing is None:
             self.pricing = {model: LLMTokenCost(input=0.0, output=0.0) for model in self.models}
 
@@ -60,7 +61,7 @@ class EmbeddingConfig:
     def __post_init__(self):
         """Validate embedding configuration"""
         if not self.models:
-            raise ValueError("Embedding model cannot be empty")
+            raise ValueError("Embedding models cannot be empty")
         if self.pricing is None:
             self.pricing = {model: EmbeddingCost() for model in self.models}
 
@@ -76,7 +77,7 @@ class RerankerConfig:
     def __post_init__(self):
         """Validate reranker configuration"""
         if not self.models:
-            raise ValueError("Reranker model cannot be empty")
+            raise ValueError("Reranker models cannot be empty")
         if self.pricing is None:
             self.pricing = {
                 model: RerankerCost(
@@ -122,6 +123,7 @@ class RerankerModel:
 
 @dataclass
 class VectorStoreItem:
+    """Vector store item configuration"""
     provider: VectorStoreProvider
     index_name: Optional[str] = None
     api_key: Optional[str] = None

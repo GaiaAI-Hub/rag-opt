@@ -1,5 +1,5 @@
 from rag_opt._config import SearchType, LLMConfig, EmbeddingConfig, VectorStoreConfig, RerankerConfig, RerankerType, SearchSpaceType
-from typing import Any, Union, Optional, Generic, TypeVar,  ClassVar
+from typing import Any, Union, Optional, Generic, TypeVar, ClassVar
 from rag_opt.rag._pricing import (LLMTokenCost, 
                                   EmbeddingCost, 
                                   RerankerCost, 
@@ -12,7 +12,6 @@ from ._sampler import SamplingMixin
 from loguru import logger
 from pathlib import Path
 import yaml
-
 
 HyperParameterConfig = TypeVar("HyperParameterConfig", SearchType, LLMConfig, EmbeddingConfig, VectorStoreConfig, RerankerConfig, RerankerType)
 BoundedType = TypeVar("BoundedType", int, float)
@@ -65,7 +64,6 @@ class BooleanConfig:
         """Validate boolean configuration"""
         if self.searchspace_type != "boolean":
             raise ValueError(f"searchspace_type must be 'boolean', got '{self.searchspace_type}'")
-
 
 
 @dataclass
@@ -135,56 +133,6 @@ class RAGSearchSpace(SamplingMixin):
         if errors:
             logger.error(f"Configuration validation failed: {'; '.join(errors)}")
             raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
-
-    @classmethod
-    def _parse_pricing_from_dict(cls, 
-                                 provider: str, 
-                                 model: str = None, # none for vectostore
-                                 pricing_dict: dict = {}) -> Union[LLMTokenCost, EmbeddingCost, RerankerCost, VectorStoreCost]:
-        """Parse pricing information from dictionary and store in the pricing registry"""
-        _pricing = None
-        if 'input' in pricing_dict and 'output' in pricing_dict:
-            # LLM pricing
-            _pricing =  LLMTokenCost(
-                input=pricing_dict.get('input', 0.0),
-                output=pricing_dict.get('output', 0.0),
-                cache_read=pricing_dict.get('cache_read'),
-                cache_creation=pricing_dict.get('cache_creation'),
-                reasoning=pricing_dict.get('reasoning'),
-                audio=pricing_dict.get('audio'),
-            )
-            cls._pricing_registery.add_llm_provider(provider, {model: _pricing})
-
-        elif 'cost_per_1k_tokens' in pricing_dict:
-            # Embedding pricing
-            _pricing =  EmbeddingCost(
-                cost_per_1k_tokens=pricing_dict.get('cost_per_1k_tokens', 0.0)
-            )
-            cls._pricing_registery.add_embedding_provider(provider, {model: _pricing})
-
-        elif 'pricing_type' in pricing_dict:
-            # Reranker pricing
-            pricing_type = RerankerPricingType(pricing_dict.get('pricing_type', 'free'))
-            _pricing =  RerankerCost(
-                pricing_type=pricing_type,
-                cost_per_unit=pricing_dict.get('cost_per_unit', 0.0),
-                cost_unit=pricing_dict.get('cost_unit', 1000)
-            )
-            cls._pricing_registery.add_reranker_provider(provider, {model: _pricing})
-        elif any(k in pricing_dict for k in ['storage_per_gb_month', 'read_operations_per_1k', 'write_operations_per_1k', 'query_per_1k']):
-            # Vector store pricing
-            _pricing =  VectorStoreCost(
-                storage_per_gb_month=pricing_dict.get('storage_per_gb_month', 0.0),
-                read_operations_per_1k=pricing_dict.get('read_operations_per_1k', 0.0),
-                write_operations_per_1k=pricing_dict.get('write_operations_per_1k', 0.0),
-                query_per_1k=pricing_dict.get('query_per_1k', 0.0)
-            )
-            cls._pricing_registery.add_vector_store_provider(provider, {model: _pricing})
-        else:
-            # Default to zeros
-            _pricing =  LLMTokenCost(input=0.0, output=0.0)
-
-        return _pricing
         
     @classmethod
     def _create_config_object(cls, param_name: str, param_config: dict) -> Any:
@@ -200,40 +148,33 @@ class RAGSearchSpace(SamplingMixin):
                 dtype=dtype
             )
         elif space_type == 'categorical':
-            choices: dict[str, dict] = param_config['choices']
+            choices: dict[str, Any] = param_config['choices']
             
+            # Process provider configs
             if isinstance(choices, dict) and param_name in ['vector_store', 'embedding', 'llm', 'reranker']:
                 processed_choices = {}
                 for provider_name, provider_config in choices.items():
-                    pricing = None
-                    if 'pricing' in provider_config:
-                        if isinstance(provider_config['pricing'], dict):
-                            pricing = {}
-                            if param_name != "vector_store":
-                                for model_name, model_pricing in provider_config['pricing'].items():
-                                    try:
-                                        pricing[model_name] = cls._parse_pricing_from_dict(provider_name, model_name, model_pricing)
-                                    except Exception as e:
-                                        logger.error(f"Error parsing pricing for model {model_name}: {str(e)}")
-                        else:
-                            pricing = cls._parse_pricing_from_dict(provider_name, model_name, provider_config['pricing'])
+                    # Handle gateway-style list configuration
+                    if provider_name == 'gateway' and isinstance(provider_config, list):
+                        # Keep gateway as a list of model strings
+                        processed_choices[provider_name] = provider_config
+                        continue
+                    
+                    # Handle both dict and pre-processed configs
+                    if not isinstance(provider_config, dict):
+                        processed_choices[provider_name] = provider_config
+                        continue
                     
                     if param_name == 'vector_store':
-                        vs_pricing = None
-                        if 'pricing' in provider_config:
-                            vs_pricing = cls._parse_pricing_from_dict(provider_name, "", provider_config['pricing'])
-                        
                         processed_choices[provider_name] = VectorStoreConfig(
                             provider=provider_name,
-                            pricing=vs_pricing,
-                            **{k: v for k, v in provider_config.items() if k not in ('pricing')}
+                            **{k: v for k, v in provider_config.items() if k != 'pricing'}
                         )
                     elif param_name == 'embedding':
                         models = provider_config.get('models', [provider_name])
                         processed_choices[provider_name] = EmbeddingConfig(
                             provider=provider_name,
                             models=models,
-                            pricing=pricing,
                             **{k: v for k, v in provider_config.items() if k not in ['models', 'pricing']}
                         )
                     elif param_name == 'llm':
@@ -241,7 +182,6 @@ class RAGSearchSpace(SamplingMixin):
                         processed_choices[provider_name] = LLMConfig(
                             provider=provider_name,
                             models=models,
-                            pricing=pricing,
                             **{k: v for k, v in provider_config.items() if k not in ['models', 'pricing']}
                         )
                     elif param_name == 'reranker':
@@ -249,7 +189,6 @@ class RAGSearchSpace(SamplingMixin):
                         processed_choices[provider_name] = RerankerConfig(
                             provider=provider_name,
                             models=models,
-                            pricing=pricing,
                             **{k: v for k, v in provider_config.items() if k not in ['models', 'pricing']}
                         )
                 choices = processed_choices
@@ -265,6 +204,7 @@ class RAGSearchSpace(SamplingMixin):
             )
         else:
             raise ValueError(f"Unknown search space type: {space_type}")
+
 
     @classmethod
     def get_default_search_space_config(cls) -> "RAGSearchSpace": 
@@ -301,9 +241,9 @@ class RAGSearchSpace(SamplingMixin):
             embedding=CategoricalConfig(
                 searchspace_type="categorical",
                 choices={
-                    "openai": EmbeddingConfig("openai", "text-embedding-ada-002"),
-                    "huggingface": EmbeddingConfig("huggingface", "all-MiniLM-L6-v2"),
-                    "sentence-transformers": EmbeddingConfig("sentence-transformers", "all-MiniLM-L6-v2")
+                    "openai": EmbeddingConfig("openai", ["text-embedding-ada-002"]),
+                    "huggingface": EmbeddingConfig("huggingface", ["all-MiniLM-L6-v2"]),
+                    "sentence-transformers": EmbeddingConfig("sentence-transformers", ["all-MiniLM-L6-v2"])
                 }
             ),
             k=ContinuousConfig(
@@ -323,16 +263,16 @@ class RAGSearchSpace(SamplingMixin):
             reranker=CategoricalConfig(
                 searchspace_type="categorical",
                 choices={
-                    "cross_encoder": RerankerConfig("cross_encoder", "msmarco-MiniLM-L-6-v3"),
-                    "colbert": RerankerConfig("colbert", "msmarco-MiniLM-L-6-v3"),
-                    "bge": RerankerConfig("bge", "bge-reranker-base")
+                    "cross_encoder": RerankerConfig("cross_encoder", ["msmarco-MiniLM-L-6-v3"]),
+                    "colbert": RerankerConfig("colbert", ["msmarco-MiniLM-L-6-v3"]),
+                    "bge": RerankerConfig("bge", ["bge-reranker-base"])
                 }
             ),
             llm=CategoricalConfig(
                 searchspace_type="categorical",
                 choices={
-                    "openai": LLMConfig("openai", "gpt-3.5-turbo"),
-                    "anthropic": LLMConfig("anthropic", "claude-3-7-sonnet-latest")
+                    "openai": LLMConfig("openai", ["gpt-5-nano"]),
+                    "deepseek": LLMConfig("deepseek", ["deepseek-v3.2-exp"])
                 }
             )
         )
@@ -344,7 +284,8 @@ class RAGSearchSpace(SamplingMixin):
         if not yaml_path.exists():
             logger.error(f"Configuration file not found: {yaml_path}")
             raise FileNotFoundError(f"Configuration file not found: {yaml_path}")
-            
+
+        logger.success(f"Loading configuration from {yaml_path}")   
         with open(yaml_path, 'r') as f:
             raw_config: dict[str, dict] = yaml.safe_load(f)
         
@@ -352,6 +293,8 @@ class RAGSearchSpace(SamplingMixin):
         
         for param_name, param_config in raw_config.items():
             search_space[param_name] = cls._create_config_object(param_name, param_config)
+        
+
         
         return cls(**search_space)
 
@@ -370,7 +313,7 @@ class RAGSearchSpace(SamplingMixin):
         return result
 
     def _get_hyperparameters(self):
-        return {param_name: config for param_name, config in self.to_dict().items() } # if isinstance(config, GeneralConfig)
+        return {param_name: config for param_name, config in self.to_dict().items() }
     
     def to_yaml(self, path: Union[str, Path] = "./rag_config.yaml") -> None:
         """Save RAGSearchSpace to YAML file"""

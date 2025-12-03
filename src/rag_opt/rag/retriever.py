@@ -9,7 +9,7 @@ from loguru import logger
 import joblib
 import hashlib
 
-
+# TODO:: adjust if needed and remove redundancy
 class Retriever(BaseRetriever):
     """
     Enhanced retrieval with multiple search strategies.

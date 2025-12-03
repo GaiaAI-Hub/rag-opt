@@ -4,10 +4,10 @@ from rag_opt.rag._pricing import PricingRegistry
 from langchain_core.messages import AIMessage
 from langchain.schema import Document
 from dataclasses import dataclass
-from loguru import logger
 from typing import Any, Optional
-import threading
+from loguru import logger
 from uuid import UUID
+import threading
 import time
 
 
@@ -50,25 +50,26 @@ class RAGCallbackHandler(BaseCallbackHandler):
     """Unified callback handler for RAG pipeline to track cost, usage and latency"""
     
     def __init__(self,
-                 embedding_provider_name: str = None,
-                 embedding_model_name: str = None,
-                 llm_provider_name: str = None,
-                 llm_model_name: str = None,
-                 reranker_provider_name: str = None,
-                 reranker_model_name: str = None,
-                 vector_store_provider_name: str = None,
-                 verbose: bool = True) -> None:
+                 embedding_provider_name: Optional[str] = None,
+                 embedding_model_name: Optional[str] = None,
+                 llm_provider_name: Optional[str] = None,
+                 llm_model_name: Optional[str] = None,
+                 reranker_provider_name: Optional[str] = None,
+                 reranker_model_name: Optional[str] = None,
+                 vector_store_provider_name: Optional[str] = None,
+                 verbose: bool = False) -> None:
         super().__init__()
         self._verbose = verbose
         self.usage_metadata: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._retrieved_contexts: list[str] = []
+        self._start_times: dict[str, float] = {}
         
+        # Initialize stats
         self.llm_stats = LLMUsageStats()
         self.embedding_stats = EmbeddingUsageStats()
         self.reranker_stats = RerankerUsageStats()
         self.tool_stats = ToolUsageStats()
-        self._start_times: dict[str, float] = {}
 
         # Provider and model names
         self.embedding_provider_name = embedding_provider_name
@@ -91,29 +92,14 @@ class RAGCallbackHandler(BaseCallbackHandler):
     def retrieved_contexts(self, value: list[str]):
         self._retrieved_contexts = value
     
-    def on_chain_start(
-        self,
-        serialized: dict[str, Any],
-        inputs: dict[str, Any],
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[list[str]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> Any:
+    def on_chain_start(self, serialized: dict[str, Any], inputs: dict[str, Any], *, 
+                      run_id: UUID, parent_run_id: Optional[UUID] = None, **kwargs) -> Any:
         if parent_run_id is None and self.verbose:
             logger.info("RAG Pipeline Started")
         self._start_times[run_id] = time.time()
 
-    def on_chain_end(
-        self,
-        outputs: dict[str, Any],
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **kwargs: Any,
-    ) -> Any:
+    def on_chain_end(self, outputs: dict[str, Any], *, run_id: UUID, 
+                     parent_run_id: Optional[UUID] = None, **kwargs) -> Any:
         if run_id in self._start_times:
             latency = time.time() - self._start_times.pop(run_id)
             if parent_run_id is None and self.verbose:
@@ -127,60 +113,73 @@ class RAGCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, run_id=None, **kwargs: Any) -> None:
         """Track LLM usage and distinguish between tool calls and regular responses"""
-        
         latency = time.time() - self._start_times.pop(run_id, time.time())
         
-        try:
-            generation = response.generations[0][0]
-        except IndexError:
-            if self.verbose:
-                logger.warning("No generation found in LLM response")
-            return
-        
-        if not isinstance(generation, ChatGeneration):
+        generation = self._get_generation(response)
+        if not generation:
             return
         
         message = generation.message
         if not isinstance(message, AIMessage):
             return
         
-        has_tool_calls = bool(getattr(message, 'tool_calls', None))
+        # Check if this is a tool call
+        if self._is_tool_call(message):
+            self._track_tool_call(latency)
+            return
         
-        # Track tool vs LLM latency
+        # Track LLM response
+        self._track_llm_response(message, response, latency)
+
+    def _get_generation(self, response: LLMResult) -> Optional[ChatGeneration]:
+        """Extract generation from response"""
+        try:
+            generation = response.generations[0][0]
+            return generation if isinstance(generation, ChatGeneration) else None
+        except IndexError:
+            if self.verbose:
+                logger.warning("No generation found in LLM response")
+            return None
+
+    def _is_tool_call(self, message: AIMessage) -> bool:
+        """Check if message contains tool calls"""
+        return bool(getattr(message, 'tool_calls', None))
+
+    def _track_tool_call(self, latency: float):
+        """Track tool call latency"""
         with self._lock:
-            if has_tool_calls:
-                self.tool_stats.tool_calls += 1
-                self.tool_stats.total_latency += latency
-                if self.verbose:
-                    logger.info(f"Tool Call - Latency: {latency:.3f}s")
-                return
-            else:
-                self.llm_stats.total_latency += latency
-                if self.verbose:
-                    logger.info(f"LLM Response - Latency: {latency:.3f}s")
+            self.tool_stats.tool_calls += 1
+            self.tool_stats.total_latency += latency
+        if self.verbose:
+            logger.info(f"Tool Call - Latency: {latency:.3f}s")
+
+    def _track_llm_response(self, message: AIMessage, response: LLMResult, latency: float):
+        """Track LLM response usage and cost"""
+        with self._lock:
+            self.llm_stats.total_latency += latency
         
-        # Extract usage data
+        if self.verbose:
+            logger.info(f"LLM Response - Latency: {latency:.3f}s")
+        
         usage_metadata = self._extract_usage(message, response)
-        
         if not usage_metadata:
             with self._lock:
                 self.llm_stats.successful_requests += 1
             return
         
-        # Extract model name
         model_name = self.llm_model_name or self._extract_model_name(message, response)
-        
-        # Update stats with cost calculation
         self._update_llm_stats(usage_metadata, model_name)
         self._log_current_stats()
 
     def _extract_model_name(self, message: AIMessage, response: LLMResult) -> str:
         """Extract model name from message or response"""
+        # Check response_metadata
         if hasattr(message, 'response_metadata'):
             model = message.response_metadata.get('model_name') or message.response_metadata.get('model')
             if model:
                 return model
         
+        # Check llm_output
         if response.llm_output:
             model = response.llm_output.get('model_name') or response.llm_output.get('model')
             if model:
@@ -188,37 +187,34 @@ class RAGCallbackHandler(BaseCallbackHandler):
         
         return "unknown"
 
-    def _extract_usage(self, message: AIMessage, response: LLMResult) -> dict | None:
+    def _extract_usage(self, message: AIMessage, response: LLMResult) -> Optional[dict]:
         """Extract usage metadata from various sources"""
-        
-        # Method 1: Modern usage_metadata
+        # Method 1: Modern usage_metadata attribute
         usage_metadata = getattr(message, 'usage_metadata', None)
         if usage_metadata:
             return usage_metadata
         
         # Method 2: From response_metadata
         if hasattr(message, 'response_metadata') and 'usage' in message.response_metadata:
-            usage_data = message.response_metadata['usage']
-            return {
-                'total_tokens': usage_data.get('total_tokens', 0),
-                'input_tokens': usage_data.get('prompt_tokens', 0),
-                'output_tokens': usage_data.get('completion_tokens', 0)
-            }
+            return self._normalize_usage(message.response_metadata['usage'])
         
         # Method 3: From llm_output
         if response.llm_output and 'usage' in response.llm_output:
-            usage_data = response.llm_output['usage']
-            return {
-                'total_tokens': usage_data.get('total_tokens', 0),
-                'input_tokens': usage_data.get('prompt_tokens', 0),
-                'output_tokens': usage_data.get('completion_tokens', 0)
-            }
+            return self._normalize_usage(response.llm_output['usage'])
         
         return None
 
+    @staticmethod
+    def _normalize_usage(usage_data: dict) -> dict:
+        """Normalize usage data to standard format"""
+        return {
+            'total_tokens': usage_data.get('total_tokens', 0),
+            'input_tokens': usage_data.get('prompt_tokens', 0),
+            'output_tokens': usage_data.get('completion_tokens', 0)
+        }
+
     def _update_llm_stats(self, usage_metadata: dict, model_name: str):
         """Update LLM stats with cost calculation"""
-        
         total_tokens = usage_metadata.get('total_tokens', 0)
         input_tokens = usage_metadata.get('input_tokens', 0)
         output_tokens = usage_metadata.get('output_tokens', 0)
@@ -229,7 +225,7 @@ class RAGCallbackHandler(BaseCallbackHandler):
         reasoning_tokens = output_details.get('reasoning', 0)
         
         with self._lock:
-            # Update LLM stats
+            # Update token counts
             self.llm_stats.total_tokens += total_tokens
             self.llm_stats.prompt_tokens += input_tokens
             self.llm_stats.completion_tokens += output_tokens
@@ -238,95 +234,72 @@ class RAGCallbackHandler(BaseCallbackHandler):
             self.llm_stats.successful_requests += 1
             
             # Update per-model usage
-            if model_name not in self.usage_metadata:
-                self.usage_metadata[model_name] = usage_metadata.copy()
-            else:
-                try:
-                    from langchain_core.messages.ai import add_usage
-                    self.usage_metadata[model_name] = add_usage(
-                        self.usage_metadata[model_name], usage_metadata
-                    )
-                except ImportError:
-                    existing = self.usage_metadata[model_name]
-                    self.usage_metadata[model_name] = {
-                        'total_tokens': existing.get('total_tokens', 0) + total_tokens,
-                        'input_tokens': existing.get('input_tokens', 0) + input_tokens,
-                        'output_tokens': existing.get('output_tokens', 0) + output_tokens
-                    }
+            self._update_model_usage(model_name, usage_metadata, total_tokens, input_tokens, output_tokens)
             
-            # Calculate cost
-            if self.llm_provider_name and model_name:
-                try:
-                    cost = PricingRegistry.calculate_llm_cost(
-                        provider=self.llm_provider_name,
-                        model=model_name,
-                        usage=usage_metadata
-                    )
-                    if cost is not None:
-                        self.llm_stats.total_cost += cost
-                        if self.verbose:
-                            logger.info(f"LLM Cost: ${cost:.6f}")
-                except Exception as e:
-                    if self.verbose:
-                        logger.warning(f"Could not calculate LLM cost: {e}")
+            # Calculate and add cost
+            self._add_llm_cost(model_name, usage_metadata)
+
+    def _update_model_usage(self, model_name: str, usage_metadata: dict, 
+                           total_tokens: int, input_tokens: int, output_tokens: int):
+        """Update per-model usage tracking"""
+        if model_name not in self.usage_metadata:
+            self.usage_metadata[model_name] = usage_metadata.copy()
+            return
+        
+        try:
+            from langchain_core.messages.ai import add_usage
+            self.usage_metadata[model_name] = add_usage(
+                self.usage_metadata[model_name], usage_metadata
+            )
+        except ImportError:
+            # Fallback: manual aggregation
+            existing = self.usage_metadata[model_name]
+            self.usage_metadata[model_name] = {
+                'total_tokens': existing.get('total_tokens', 0) + total_tokens,
+                'input_tokens': existing.get('input_tokens', 0) + input_tokens,
+                'output_tokens': existing.get('output_tokens', 0) + output_tokens
+            }
+
+    def _add_llm_cost(self, model_name: str, usage_metadata: dict):
+        """Calculate and add LLM cost"""
+        if not self.llm_provider_name or not model_name:
+            return
+        
+        try:
+            cost = PricingRegistry.calculate_llm_cost(
+                provider=self.llm_provider_name,
+                model=model_name,
+                usage=usage_metadata
+            )
+            if cost is not None:
+                self.llm_stats.total_cost += cost
+                if self.verbose:
+                    logger.info(f"LLM Cost: ${cost:.6f}")
+        except Exception as e:
+            if self.verbose:
+                logger.debug(f"Could not calculate LLM cost: {e}")
 
     def on_retriever_start(self, serialized, query, *, run_id, **kwargs):
         if run_id not in self._start_times:
             self._start_times[run_id] = time.time()
             if self.verbose:
                 logger.info(f"Retriever Started - Query: {query[:50]}...")
-        # Calculate embedding cost for retrieval
-        self._calculate_embedding_cost_for_retrieval(kwargs.get('query', ''), 0)
 
     def on_retriever_end(self, documents: list[Document], *, run_id, **kwargs):
-        if run_id in self._start_times:
-            latency = time.time() - self._start_times.pop(run_id)
-            
-            with self._lock:
-                self.tool_stats.retrieval_calls += 1
-                self.tool_stats.total_latency += latency
-            
-            if self.verbose:
-                logger.success(f"Retrieval Completed - {len(documents)} docs - Latency: {latency:.3f}s")
-            
-            self.retrieved_contexts = [doc.page_content for doc in documents]
-            
-            # self._calculate_embedding_cost_for_retrieval(kwargs.get('query', ''), latency)
-            self._log_current_stats()
-
-    def _calculate_embedding_cost_for_retrieval(self, query: str, latency: float):
-        """Calculate and track embedding cost for a retrieval operation"""
-        if not self.embedding_provider_name or not self.embedding_model_name:
+        if run_id not in self._start_times:
             return
         
-        try:
-            # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
-            estimated_tokens = len(query) // 4
-            
-            usage_metadata = {
-                'input_tokens': estimated_tokens,
-                'output_tokens': 0,
-                'total_tokens': estimated_tokens
-            }
-            
-            cost = PricingRegistry.calculate_embedding_cost(
-                provider=self.embedding_provider_name,
-                model=self.embedding_model_name,
-                usage=usage_metadata
-            )
-            
-            if cost is not None:
-                with self._lock:
-                    self.embedding_stats.total_tokens += estimated_tokens
-                    self.embedding_stats.total_requests += 1
-                    self.embedding_stats.total_cost += cost
-                    self.embedding_stats.total_latency += latency
-                    
-                if self.verbose:
-                    logger.info(f"Embedding Cost: ${cost:.6f}")
-        except Exception as e:
-            if self.verbose:
-                logger.warning(f"Could not calculate embedding cost: {e}")
+        latency = time.time() - self._start_times.pop(run_id)
+        
+        with self._lock:
+            self.tool_stats.retrieval_calls += 1
+            self.tool_stats.total_latency += latency
+        
+        if self.verbose:
+            logger.success(f"Retrieval Completed - {len(documents)} docs - Latency: {latency:.3f}s")
+        
+        self.retrieved_contexts = [doc.page_content for doc in documents]
+        self._log_current_stats()
 
     def track_reranking(self, documents: list[Document], latency: float):
         """Track reranking operation cost and stats"""
@@ -352,24 +325,18 @@ class RAGCallbackHandler(BaseCallbackHandler):
                     logger.info(f"Reranker Cost: ${cost:.6f}")
         except Exception as e:
             if self.verbose:
-                logger.warning(f"Could not calculate reranker cost: {e}")
-
-    def on_agent_action(self, action, **kwargs):
-        if self.verbose:
-            logger.info(f"Agent Action: {action.tool}")
-    
+                logger.debug(f"Could not calculate reranker cost: {e}")
 
     def _log_current_stats(self):
         """Log current stats after operations"""
-        if self.verbose:
-            logger.info(
-                f"Current Stats - LLM Requests: {self.llm_stats.successful_requests}, "
-                f"Tokens: {self.llm_stats.total_tokens}, "
-                f"LLM Cost: ${self.llm_stats.total_cost:.6f}, "
-                f"Embedding Cost: ${self.embedding_stats.total_cost:.6f}, "
-                f"Reranker Cost: ${self.reranker_stats.total_cost:.6f}, "
-                f"Total Cost: ${self.get_total_cost():.6f}"
-            )
+        if not self.verbose:
+            return
+        
+        logger.info(
+            f"Stats - LLM Requests: {self.llm_stats.successful_requests}, "
+            f"Tokens: {self.llm_stats.total_tokens}, "
+            f"Total Cost: ${self.get_total_cost():.6f}"
+        )
 
     def get_total_cost(self) -> float:
         """Get total cost across all components"""
@@ -379,50 +346,37 @@ class RAGCallbackHandler(BaseCallbackHandler):
 
     def get_summary(self) -> str:
         """Get a summary of all tracked metrics"""
-        avg_llm_latency = (
-            self.llm_stats.total_latency / max(1, self.llm_stats.successful_requests)
-        )
-        avg_tool_latency = (
-            self.tool_stats.total_latency / max(1, self.tool_stats.tool_calls)
-        )
-        avg_embedding_latency = (
-            self.embedding_stats.total_latency / max(1, self.embedding_stats.total_requests)
-        )
-        avg_reranker_latency = (
-            self.reranker_stats.total_latency / max(1, self.reranker_stats.total_requests)
-        )
+        def safe_avg(total: float, count: int) -> float:
+            return total / max(1, count)
         
         return f"""
-                RAG Pipeline Summary:
-                ===================
-                LLM Stats:
-                - Requests: {self.llm_stats.successful_requests}
-                - Total Tokens: {self.llm_stats.total_tokens}
-                - Prompt Tokens: {self.llm_stats.prompt_tokens}
-                - Completion Tokens: {self.llm_stats.completion_tokens}
-                - Total Cost: ${self.llm_stats.total_cost:.6f}
-                - Avg Latency: {avg_llm_latency:.3f}s
+RAG Pipeline Summary:
+===================
+LLM Stats:
+  - Requests: {self.llm_stats.successful_requests}
+  - Total Tokens: {self.llm_stats.total_tokens:,}
+  - Prompt Tokens: {self.llm_stats.prompt_tokens:,} (Cached: {self.llm_stats.prompt_tokens_cached:,})
+  - Completion Tokens: {self.llm_stats.completion_tokens:,}
+  - Total Cost: ${self.llm_stats.total_cost:.6f}
+  - Avg Latency: {safe_avg(self.llm_stats.total_latency, self.llm_stats.successful_requests):.3f}s
 
-                Embedding Stats:
-                - Requests: {self.embedding_stats.total_requests}
-                - Total Tokens: {self.embedding_stats.total_tokens}
-                - Total Cost: ${self.embedding_stats.total_cost:.6f}
-                - Avg Latency: {avg_embedding_latency:.3f}s
+Embedding Stats:
+  - Requests: {self.embedding_stats.total_requests}
+  - Total Cost: ${self.embedding_stats.total_cost:.6f}
 
-                Reranker Stats:
-                - Requests: {self.reranker_stats.total_requests}
-                - Documents Processed: {self.reranker_stats.total_documents}
-                - Total Cost: ${self.reranker_stats.total_cost:.6f}
-                - Avg Latency: {avg_reranker_latency:.3f}s
+Reranker Stats:
+  - Requests: {self.reranker_stats.total_requests}
+  - Documents: {self.reranker_stats.total_documents}
+  - Total Cost: ${self.reranker_stats.total_cost:.6f}
 
-                Tool Stats:
-                - Tool Calls: {self.tool_stats.tool_calls}
-                - Retrieval Calls: {self.tool_stats.retrieval_calls}
-                - Avg Tool Latency: {avg_tool_latency:.3f}s
+Tool Stats:
+  - Tool Calls: {self.tool_stats.tool_calls}
+  - Retrieval Calls: {self.tool_stats.retrieval_calls}
+  - Avg Latency: {safe_avg(self.tool_stats.total_latency, self.tool_stats.tool_calls):.3f}s
 
-                Total Cost: ${self.get_total_cost():.6f}
-                Models Used: {list(self.usage_metadata.keys())}
-                """
+Total Cost: ${self.get_total_cost():.6f}
+Models Used: {list(self.usage_metadata.keys())}
+"""
 
     def reset(self):
         """Reset all counters"""

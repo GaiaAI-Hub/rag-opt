@@ -133,7 +133,7 @@ optimizer = Optimizer(
 )
 
 # Find optimal configuration
-best_config = optimizer.optimize(n_trials=50, best_one=True)
+best_config = optimizer.optimize(n_trials=3, best_one=True)
 best_config.to_json()
 ```
 

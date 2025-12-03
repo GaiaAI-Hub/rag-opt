@@ -1,22 +1,21 @@
-# Indexing parameters
 chunk_size:
   searchspace_type: continuous
-  bounds: [200, 2000]
+  bounds: [500, 1000]
   dtype: int
 
 max_tokens:
   searchspace_type: continuous
-  bounds: [100, 1000]
+  bounds: [1000, 5000]
   dtype: int
 
 chunk_overlap:
   searchspace_type: continuous
-  bounds: [0, 500]
+  bounds: [100, 500]
   dtype: int
 
 temperature:
   searchspace_type: continuous
-  bounds: [0.0, 1.0]
+  bounds: [0.1, 1.0]
   dtype: float
 
 vector_store:
@@ -27,166 +26,43 @@ vector_store:
       api_base: null
       index_name: null
       cloud_config: null
-      pricing:
-        storage_per_gb_month: 0.0
-        read_operations_per_1k: 0.0
-        write_operations_per_1k: 0.0
-        query_per_1k: 0.0
     chroma:
       api_key: null
       api_base: null
       index_name: null
       cloud_config: null
-      pricing:
-        storage_per_gb_month: 0.0
-        read_operations_per_1k: 0.0
-        write_operations_per_1k: 0.0
-        query_per_1k: 0.0
-    pinecone:
-      api_key: "***"
-      api_base: null
-      index_name: "test"
-      cloud_config: null
-      pricing:
-        storage_per_gb_month: 0.70 # $0.70 per GB per month
-        read_operations_per_1k: 0.0004 # $0.0004 per 1K read units
-        write_operations_per_1k: 0.002 # $0.002 per 1K write units
-        query_per_1k: 0.0004 # $0.0004 per 1K queries
-    # weaviate:
-    #   api_key: null
-    #   api_base: null
-    #   index_name: null
-    #   cloud_config: null
-    #   pricing:
-    #     storage_per_gb_month: 0.25 # Estimated pricing
-    #     read_operations_per_1k: 0.0003
-    #     write_operations_per_1k: 0.0015
-    #     query_per_1k: 0.0003
 
 search_type:
   searchspace_type: categorical
-  choices: ["similarity", "mmr", "bm25", "tfidf", "hybrid"]
-
-embedding:
-  searchspace_type: categorical
-  choices:
-    openai:
-      api_key: "sk-***"
-      api_base: null
-      models:
-        [
-          "text-embedding-ada-002",
-          "text-embedding-3-small",
-          "text-embedding-3-large",
-        ]
-      pricing:
-        text-embedding-ada-002:
-          cost_per_1k_tokens: 0.0001 # $0.0001 per 1K tokens
-        text-embedding-3-small:
-          cost_per_1k_tokens: 0.00002 # $0.00002 per 1K tokens
-        text-embedding-3-large:
-          cost_per_1k_tokens: 0.00013 # $0.00013 per 1K tokens
-    huggingface:
-      api_key: "hf_***"
-      api_base: null
-      models:
-        [
-          "HuggingFaceH4/zephyr-7b-beta",
-          # "meta-llama/Llama-3.1-8B-Instruct",
-          # "google/gemma-2-2b-it",
-          # "zai-org/GLM-4.5",
-          # "Kwaipilot/KAT-Dev",
-        ]
-        # TODO:: adjust pricing as needed
-      pricing:
-        HuggingFaceH4/zephyr-7b-beta:
-          cost_per_1k_tokens: 0.0
-        meta-llama/Llama-3.1-8B-Instruct:
-          cost_per_1k_tokens: 0.0
-
-# Retrieval parameters
-k:
-  searchspace_type: continuous
-  bounds: [1, 20]
-  dtype: int
+  choices: ["similarity", "mmr"]
 
 use_reranker:
   searchspace_type: boolean
   allow_multiple: true
 
-# Generation
+# Gateway-style configuration for LLMs
 llm:
   searchspace_type: categorical
   choices:
-    openai:
-      api_key: "sk-***"
-      api_base: null
-      models: ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o"]
-      pricing:
-        gpt-3.5-turbo:
-          input: 0.0005 # $0.0005 per 1K input tokens
-          output: 0.0015 # $0.0015 per 1K output tokens
-        gpt-4:
-          input: 0.03 # $0.03 per 1K input tokens
-          output: 0.06 # $0.06 per 1K output tokens
-        gpt-4-turbo:
-          input: 0.01 # $0.01 per 1K input tokens
-          output: 0.03 # $0.03 per 1K output tokens
-        gpt-4o:
-          input: 0.005 # $0.005 per 1K input tokens
-          output: 0.015 # $0.015 per 1K output tokens
-          cache_read: 0.0025 # $0.0025 per 1K cached input tokens
-          cache_creation: 0.0125 # $0.0125 per 1K tokens for cache creation
-    # anthropic:
-    #   api_key: "sk-***"
-    #   api_base: null
-    #   models:
-    #     [
-    #       "claude-3-haiku-20240307",
-    #       "claude-3-7-sonnet-latest",
-    #       "claude-opus-4-1-20250805",
-    #     ]
-    #   pricing:
-    #     claude-3-haiku-20240307:
-    #       input: 0.00025 # $0.00025 per 1K input tokens
-    #       output: 0.00125 # $0.00125 per 1K output tokens
-    #     claude-3-7-sonnet-latest:
-    #       input: 0.003 # $0.003 per 1K input tokens
-    #       output: 0.015 # $0.015 per 1K output tokens
-    #     claude-opus-4-1-20250805:
-    #       input: 0.015 # $0.015 per 1K input tokens
-    #       output: 0.075 # $0.075 per 1K output tokens
-    huggingface:
-      api_key: "hf_***"
-      api_base: null
-      models: [
-          "HuggingFaceH4/zephyr-7b-beta",
-          # "meta-llama/Llama-3.1-8B-Instruct",
-          # "google/gemma-2-2b-it",
-          # "zai-org/GLM-4.5",
-          # "Kwaipilot/KAT-Dev",
-        ]
-      pricing:
-        gpt2:
-          input: 0.0 # Free for local usage
-          output: 0.0
-        gpt2-medium:
-          input: 0.0 # Free for local usage
-          output: 0.0
-        gpt2-large:
-          input: 0.0 # Free for local usage
-          output: 0.0
-        BEE-spoke-data/smol_llama-101M-GQA:
-          input: 0.0 # Free for local usage
-          output: 0.0
-    deepseek:
-      api_key: "sk-***"
-      api_base: null
-      models: ["deepseek-chat", "deepseek-coder"]
-      pricing:
-        deepseek-chat:
-          input: 0.00014 # $0.00014 per 1K input tokens
-          output: 0.00028 # $0.00028 per 1K output tokens
-        deepseek-coder:
-          input: 0.00014 # $0.00014 per 1K input tokens
-          output: 0.00028 # $0.00028 per 1K output tokens
+    gateway:
+      - "openai/gpt-oss-20b"
+      - "openai/gpt-5-nano"
+      - "deepseek/deepseek-v3.2-exp"
+      - "alibaba/qwen-3-14b"
+      - "meta/llama-3.1-8b"
+      - "mistral/ministral-3b"
+
+# Gateway-style configuration for embeddings
+embedding:
+  searchspace_type: categorical
+  choices:
+    gateway:
+      - "alibaba/qwen3-embedding-0.6b"
+      - "openai/text-embedding-3-small"
+      - "google/gemini-embedding-001"
+      - "mistral/mistral-embed"
+
+k:
+  searchspace_type: continuous
+  bounds: [3, 15]
+  dtype: int
