@@ -17,7 +17,7 @@ import datetime
 import textwrap
 import pickle
 import gzip
-
+import torch 
 
 
 AcquisitionFunc = Literal['qEHVI', 'qNEHVI', 'qNParEGO', 'Random']
@@ -156,7 +156,8 @@ class Optimizer:
         )
         
         logger.debug(f"Initial data: {len(train_configs)} configs evaluated")
- 
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         return FastMobo(
             problem=self.optimization_problem.create_fastmobo_problem(),
             acquisition_functions=self.acquisition_functions,
@@ -167,7 +168,8 @@ class Optimizer:
             maxiter=100,
             mc_samples=64,
             raw_samples=512,
-            num_restarts=10
+            num_restarts=10,
+            device=device
         )
 
     def _ensure_initial_state(self) -> None:
