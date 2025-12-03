@@ -21,7 +21,7 @@ import torch
 
 
 AcquisitionFunc = Literal['qEHVI', 'qNEHVI', 'qNParEGO', 'Random']
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @dataclass
 class SavedOptimizationResult:
@@ -157,9 +157,9 @@ class Optimizer:
         
         logger.debug(f"Initial data: {len(train_configs)} configs evaluated")
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
         return FastMobo(
-            problem=self.optimization_problem.create_fastmobo_problem(),
+            problem=self.optimization_problem.create_fastmobo_problem(device=device),
             acquisition_functions=self.acquisition_functions,
             batch_size=2,
             train_x=train_x,
@@ -169,7 +169,7 @@ class Optimizer:
             mc_samples=64,
             raw_samples=512,
             num_restarts=10,
-            device=device
+            # device=device
         )
 
     def _ensure_initial_state(self) -> None:
@@ -453,7 +453,7 @@ class Optimizer:
         if plot_hypervolume and self._last_result:
             try:
                 problem = (self.optimization_problem.problem or 
-                        self.optimization_problem.create_fastmobo_problem())
+                        self.optimization_problem.create_fastmobo_problem(evice=device))
                 self._last_result.plot_convergence(problem=problem, save_path=plot_hypervolume_path)
                 logger.info(f"Hypervolume plot saved to {plot_hypervolume_path or 'display'}")
             except Exception as e:
@@ -537,7 +537,7 @@ class Optimizer:
         objective_names = objective_names or list(self.optimization_problem.objectives) 
         
         if plot_hypervolume:
-            problem = self.optimization_problem.problem or self.optimization_problem.create_fastmobo_problem()
+            problem = self.optimization_problem.problem or self.optimization_problem.create_fastmobo_problem(device=device)
             result.plot_convergence(problem=problem, save_path=plot_hypervolume_path)
         
         if plot_pareto:

@@ -92,16 +92,19 @@ class RAGOptimizationProblem:
         
         return torch.stack(objectives_list)
         
-    def create_fastmobo_problem(self) -> FastMoboProblem:
+    def create_fastmobo_problem(self, device: torch.device=None) -> FastMoboProblem:
         """Create FastMoBo problem instance"""
-        noise_std = torch.tensor([0.1] * len(self.objectives), dtype=torch.float)
+        if not device:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        noise_std = torch.tensor([0.1] * len(self.objectives), dtype=torch.float, device=device)
+        bounds = self.bounds.to(device)
         self.problem = FastMoboProblem(
             objective_func=self.objective_function,
-            bounds=self.bounds,
+            bounds=bounds,
             ref_point=self.ref_point,
             num_objectives=len(self.objectives),
             noise_std=noise_std,
-            # dim=len(self.bounds),
             negate=False  # NOTE:: we do negation internally per metric like cost , latency
         )
         return self.problem
