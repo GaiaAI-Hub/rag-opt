@@ -12,24 +12,12 @@ from rag_opt.llm import RAGLLM, RAGEmbedding, Embeddings, BaseChatModel
 from rag_opt.eval.evaluator import RAGEvaluator
 import numpy as np
 import matplotlib.pyplot as plt
-from dataclasses import dataclass
-import datetime
 import textwrap
-import pickle
-import gzip
 import torch 
-
+import json
 
 AcquisitionFunc = Literal['qEHVI', 'qNEHVI', 'qNParEGO', 'Random']
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-@dataclass
-class SavedOptimizationResult:
-    """Minimal stand-in for OptimizationResult used for plotting only."""
-    train_x: dict[str, Any]
-    train_obj_true: dict[str, Any]
-    hypervolumes: dict[str, Any]
-    meta: dict[str, Any]
 
 
 class OptimizationProgress(TypedDict):
@@ -175,7 +163,7 @@ class Optimizer:
     def _ensure_initial_state(self) -> None:
         """Ensure optimizer has valid initial state."""
         try:
-            self._last_result = self.mobo_optimizer.optimize(n_iterations=0, verbose=False)
+            self._last_result = self.mobo_optimizer.optimize(n_iterations=0, verbose=self.verbose)
             logger.debug("Optimizer initialized successfully")
         except Exception as e:
             logger.warning(f"Could not initialize with n_iterations=0: {e}")
@@ -504,7 +492,7 @@ class Optimizer:
         
         result: OptimizationResult = self.mobo_optimizer.optimize(
             n_iterations=n_trials, 
-            verbose=False,
+            verbose=self.verbose,
         )
         logger.warning(f"Optimization complete. Hypervolumes: {result.hypervolumes}")
         
@@ -546,15 +534,19 @@ class Optimizer:
                 objective_names=objective_names
             )
         
-        if plot_radar:
-            self.plot_radar_objectives(result, objective_names=objective_names)
-        
         if not best_configs:
             logger.warning("optimization failed. No best configs found.")
 
         # save
         if save_result:
-            self.save_result(result, "rag_opt_result.pkl.gz")
+            report = result.get_summary_report()
+            with open('report.json', 'w') as f:
+                json.dump(report, f, indent=4)
+        
+        # radar plot
+        if plot_radar:
+            self.plot_radar_objectives(result, objective_names=objective_names)
+        
         return best_configs
 
 
@@ -628,60 +620,13 @@ class Optimizer:
             ax.set_rlabel_position(30)
             ax.set_title(method, fontsize=15, fontweight="bold", pad=20)
 
-        # plt.suptitle(
-        #     "Multi-Objective Radar Chart (Mean Normalized Performance)",
-        #     fontsize=18,
-        #     fontweight="bold",
-        #     y=1.05
-        # )
-
         plt.tight_layout()
-
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
         plt.show()
 
-    def save_result(self, result: OptimizationResult, path: str):
-        """
-        Save optimization result (train_x, train_obj_true, hypervolumes, metadata).
-        The result can later be reloaded and used to generate all plots.
-        """
+    def load_result(self, path: str) -> OptimizationResult:
+        with open(path, "rb") as f:
+            return json.load(f)
 
-        payload = {
-            "train_x": {k: v.cpu() for k, v in result.train_x.items()},
-            "train_obj_true": {k: v.cpu() for k, v in result.train_obj_true.items()},
-            "hypervolumes": result.hypervolumes,
-            "meta": {
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "objective_names": list(self.optimization_problem.objectives)
-                    if self.optimization_problem else None,
-                "acquisition_functions": list(result.train_x.keys()),
-                "search_space": getattr(self.search_space, "bounds", None),
-                "version": "1.0",
-            }
-        }
-
-        with gzip.open(path, "wb") as f:
-            pickle.dump(payload, f)
-
-        logger.success(f"Saved optimization result to {path}")
-
-    def load_result(self, path: str) -> SavedOptimizationResult:
-        """
-        Load a saved optimization result and rebuild a lightweight result object 
-        that can be used for plotting and analysis.
-        """
-
-        with gzip.open(path, "rb") as f:
-            payload = pickle.load(f)
-
-        result = SavedOptimizationResult(
-            train_x=payload["train_x"],
-            train_obj_true=payload["train_obj_true"],
-            hypervolumes=payload["hypervolumes"],
-            meta=payload["meta"],
-        )
-
-        logger.success(f"Loaded optimization result from {path}")
-        return result

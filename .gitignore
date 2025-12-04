@@ -14,7 +14,7 @@ venv
 **/data
 **/final*.py
 **/api
-
+**/docs
 rag_dataset.json
 **/demo3.py
 # Distribution / packaging

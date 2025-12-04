@@ -1,6 +1,3 @@
-"""
-Evaluation metrics for Embedding + VectorStore + Reranker (Optimized)
-"""
 from rag_opt.eval.metrics.base import BaseMetric, MetricCategory
 from rag_opt._prompts import CONTEXT_PRECISION_PROMPT, CONTEXT_RECALL_PROMPT
 from langchain_core.messages import BaseMessage
@@ -11,12 +8,43 @@ from loguru import logger
 from rag_opt.llm import RAGEmbedding
 import math
 import json
+from collections import OrderedDict
+from typing import Optional
+import asyncio
 
 TEXT_SIMILARITY_THRESHOLD = 0.8
 
 
+class LRUCache:
+    """Simple LRU cache with max size to prevent unbounded growth"""
+    def __init__(self, max_size: int = 1000):
+        self.cache = OrderedDict()
+        self.max_size = max_size
+    
+    def get(self, key: str) -> Optional[list[float]]:
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        return None
+    
+    def put(self, key: str, value: list[float]):
+        if key in self.cache:
+            self.cache.move_to_end(key)
+        else:
+            self.cache[key] = value
+            if len(self.cache) > self.max_size:
+                self.cache.popitem(last=False)
+    
+    def clear(self):
+        """Clear all cached embeddings"""
+        self.cache.clear()
+    
+    def __len__(self):
+        return len(self.cache)
+
+
 class RetrievalMetrics(BaseMetric, ABC):
-    """Base class for retrieval metrics with optimized embedding caching"""
+    """Base class for retrieval metrics with optimized async embedding caching"""
     category: MetricCategory = MetricCategory.RETRIEVAL
     is_llm_based: bool = False
     is_embedding_based: bool = False
@@ -26,15 +54,16 @@ class RetrievalMetrics(BaseMetric, ABC):
         self._limit_contexts = kwargs.get("limit_contexts", 3)
         self.embedding_model: RAGEmbedding = kwargs.get("embedding_model", None)
         
-        # Token management configuration
         self.max_prompt_tokens = kwargs.get("max_prompt_tokens", 16000)
-        self.batch_size = kwargs.get("batch_size", 10)
         self.max_context_length = kwargs.get("max_context_length", 4000)
         
-        # Embedding cache to avoid recomputation (CRITICAL OPTIMIZATION)
-        self._embedding_cache = {}
+        cache_size = kwargs.get("embedding_cache_size", 1000)
+        self._embedding_cache = LRUCache(max_size=cache_size)
         
-        # Token encoder cache
+        # REDUCED: Smaller embedding batch size to prevent hanging
+        self.embedding_batch_size = kwargs.get("embedding_batch_size", 10)  # Was 50
+        
+        # Token encoder cache 
         self._token_encoder = None
         try:
             import tiktoken
@@ -45,6 +74,17 @@ class RetrievalMetrics(BaseMetric, ABC):
         if self.is_embedding_based and not self.embedding_model:
             logger.error(f"Embedding is required to evaluate {self.name}")
             raise ValueError(f"Embedding is required to evaluate {self.name}")
+    
+    def __del__(self):
+        """Cleanup resources when object is destroyed"""
+        self.clear_cache()
+        self._token_encoder = None
+    
+    def clear_cache(self):
+        """Clear embedding cache to free memory"""
+        if hasattr(self, '_embedding_cache'):
+            self._embedding_cache.clear()
+            logger.debug(f"Cleared embedding cache for {self.name}")
     
     @property
     def limit_contexts(self):
@@ -92,7 +132,6 @@ class RetrievalMetrics(BaseMetric, ABC):
             logger.error("Template overhead exceeds token limit!")
             return []
         
-        # Try with original limit_contexts
         limited_contexts = contexts[:self.limit_contexts]
         contexts_text = "\n".join(limited_contexts)
         contexts_tokens = self._estimate_tokens(contexts_text)
@@ -100,7 +139,6 @@ class RetrievalMetrics(BaseMetric, ABC):
         if contexts_tokens <= available_tokens:
             return limited_contexts
         
-        # Reduce number of contexts
         num_contexts = self.limit_contexts
         while num_contexts > 0:
             limited_contexts = contexts[:num_contexts]
@@ -112,7 +150,6 @@ class RetrievalMetrics(BaseMetric, ABC):
             
             num_contexts -= 1
         
-        # Truncate single context if needed
         if contexts:
             max_chars = available_tokens * 4
             truncated = self._truncate_text(contexts[0], max_chars)
@@ -139,12 +176,13 @@ class RetrievalMetrics(BaseMetric, ABC):
         if self.is_llm_based:
             raise NotImplementedError
     
-    def _verify_with_llm(self, prompts: list[str]) -> list[float]:
-        """Common LLM verification with batching"""
+    async def _verify_with_llm_async(self, prompts: list[str]) -> list[float]:
+        """ASYNC LLM verification using sequential invoke (no batching)"""
         if not self.llm:
             logger.error(f"LLM is required to evaluate {self.name}")
             raise ValueError(f"LLM is required to evaluate {self.name}")
         
+        # Process prompts
         processed_prompts = []
         for idx, prompt in enumerate(prompts):
             token_count = self._estimate_tokens(prompt)
@@ -157,23 +195,28 @@ class RetrievalMetrics(BaseMetric, ABC):
             
             processed_prompts.append(prompt)
         
+        # SEQUENTIAL invoke instead of batching
         all_responses = []
-        total_batches = (len(processed_prompts) - 1) // self.batch_size + 1
-        
-        for batch_idx in range(0, len(processed_prompts), self.batch_size):
-            batch = processed_prompts[batch_idx:batch_idx + self.batch_size]
-            logger.debug(
-                f"Processing batch {batch_idx//self.batch_size + 1}/{total_batches} ({len(batch)} prompts)"
-            )
-            
+        for idx, prompt in enumerate(processed_prompts):
             try:
-                responses = self.llm.batch(batch)
-                all_responses.extend(responses)
+                # Use invoke instead of batch
+                response = await asyncio.to_thread(self.llm.invoke, prompt)
+                all_responses.append(response)
             except Exception as e:
-                logger.error(f"Batch processing failed: {e}")
-                all_responses.extend([None] * len(batch))
+                logger.error(f"LLM invoke failed for prompt {idx}: {e}")
+                all_responses.append(None)
         
         return self._parse_llm_responses(all_responses)
+    
+    def _verify_with_llm(self, prompts: list[str]) -> list[float]:
+        """Wrapper to call async version"""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(self._verify_with_llm_async(prompts))
 
     def _truncate_prompt_fallback(self, prompt: str, max_tokens: int) -> str:
         """Fallback truncation for prompts that exceed limit"""
@@ -217,51 +260,93 @@ class RetrievalMetrics(BaseMetric, ABC):
         
         return self._truncate_text(prompt, max_chars) + "\n[Content truncated to fit token limit]"
 
-    # ========== EMBEDDING OPTIMIZATION METHODS ==========
-    
     def _get_cached_embedding(self, text: str) -> list[float]:
-        """Get embedding with caching to avoid redundant API calls"""
+        """Get embedding with LRU caching to prevent unbounded growth"""
         text_clean = text.strip()
         
-        if text_clean not in self._embedding_cache:
-            self._embedding_cache[text_clean] = self.embedding_model.embed_query(text_clean)
+        cached = self._embedding_cache.get(text_clean)
+        if cached is not None:
+            return cached
         
-        return self._embedding_cache[text_clean]
+        embedding = self.embedding_model.embed_query(text_clean)
+        self._embedding_cache.put(text_clean, embedding)
+        
+        return embedding
     
-    def _precompute_embeddings(self, contexts_list: list[list[str]]):
-        """Precompute all embeddings in batch before evaluation (MAJOR SPEEDUP)"""
+    async def _precompute_embeddings_async(self, contexts_list: list[list[str]]):
+        """ASYNC: Precompute embeddings in small batches with progress tracking"""
         if not self.embedding_model:
             return
         
-        # Collect all unique contexts
         unique_contexts = set()
         for contexts in contexts_list:
             for ctx in contexts:
                 unique_contexts.add(ctx.strip())
         
-        unique_contexts = list(unique_contexts)
+        uncached_contexts = [
+            ctx for ctx in unique_contexts 
+            if self._embedding_cache.get(ctx) is None
+        ]
         
-        if not unique_contexts:
+        if not uncached_contexts:
+            logger.debug("All embeddings already cached")
             return
         
-        logger.info(f"Precomputing {len(unique_contexts)} unique contexts...")
+        total_contexts = len(uncached_contexts)
+        logger.info(f"Precomputing {total_contexts} embeddings (batch_size={self.embedding_batch_size})...")
         
         try:
-            # Try batch embedding first
-            if hasattr(self.embedding_model, 'embed_documents'):
-                embeddings = self.embedding_model.embed_documents(unique_contexts)
-                for ctx, emb in zip(unique_contexts, embeddings):
-                    self._embedding_cache[ctx] = emb
-                logger.debug(f"Batch embedding completed for {len(unique_contexts)} contexts")
-            else:
-                # Fallback: sequential with progress logging
-                for i, ctx in enumerate(unique_contexts):
-                    if i % 10 == 0:
-                        logger.debug(f"Embedding progress: {i}/{len(unique_contexts)}")
-                    self._embedding_cache[ctx] = self.embedding_model.embed_query(ctx)
-                logger.info(f"Sequential embedding completed for {len(unique_contexts)} contexts")
+            for i in range(0, total_contexts, self.embedding_batch_size):
+                batch = uncached_contexts[i:i + self.embedding_batch_size]
+                batch_num = i // self.embedding_batch_size + 1
+                total_batches = (total_contexts - 1) // self.embedding_batch_size + 1
+                
+                # Async embedding batch
+                try:
+                    if hasattr(self.embedding_model, 'embed_documents'):
+                        embeddings = await asyncio.to_thread(
+                            self.embedding_model.embed_documents, 
+                            batch
+                        )
+                        for ctx, emb in zip(batch, embeddings):
+                            self._embedding_cache.put(ctx, emb)
+                    else:
+                        # Sequential fallback
+                        for ctx in batch:
+                            emb = await asyncio.to_thread(
+                                self.embedding_model.embed_query, 
+                                ctx
+                            )
+                            self._embedding_cache.put(ctx, emb)
+                except Exception as e:
+                    logger.warning(f"Batch {batch_num} failed: {e}. Using sequential.")
+                    for ctx in batch:
+                        try:
+                            emb = await asyncio.to_thread(
+                                self.embedding_model.embed_query, 
+                                ctx
+                            )
+                            self._embedding_cache.put(ctx, emb)
+                        except Exception as seq_e:
+                            logger.error(f"Failed to embed: {seq_e}")
+                
+                if batch_num % 5 == 0 or batch_num == total_batches:
+                    logger.info(f"Progress: {min(i + self.embedding_batch_size, total_contexts)}/{total_contexts}")
+            
+            logger.info(f"Embedding precomputation complete. Cache size: {len(self._embedding_cache)}")
+        
         except Exception as e:
-            logger.warning(f"Batch embedding failed: {e}. Will compute on-demand.")
+            logger.error(f"Embedding precomputation failed: {e}. Will compute on-demand.")
+    
+    def _precompute_embeddings(self, contexts_list: list[list[str]]):
+        """Wrapper for async precompute"""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        loop.run_until_complete(self._precompute_embeddings_async(contexts_list))
     
     def _cosine_similarity(self, vec1: list[float], vec2: list[float]) -> float:
         """Calculate cosine similarity between two vectors"""
@@ -278,7 +363,6 @@ class RetrievalMetrics(BaseMetric, ABC):
         """Check if retrieved context matches any ground truth (uses cached embeddings)"""
         retrieved_clean = retrieved_ctx.strip()
 
-        # Quick exact match checks first (no API calls)
         for gt_ctx in ground_truth_contexts:
             gt_clean = gt_ctx.strip()
             
@@ -314,7 +398,7 @@ class RetrievalMetrics(BaseMetric, ABC):
 
 
 # *************************
-# Context-Based Metrics
+# Context-Based Metrics 
 # *************************
 class ContextPrecision(RetrievalMetrics):
     """Context Precision: Measures relevance of retrieved documents using Average Precision"""
@@ -389,7 +473,6 @@ class ContextPrecision(RetrievalMetrics):
                 items.append(0)
         
         return items
-
 
 class ContextRecall(RetrievalMetrics):
     """Context Recall: Measures how well retrieval finds ALL relevant information"""

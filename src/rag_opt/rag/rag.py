@@ -1,6 +1,4 @@
 from rag_opt.dataset import EvaluationDatasetItem, GroundTruth, ComponentUsage, TrainDataset, EvaluationDataset
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain.tools.retriever import create_retriever_tool
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_community.vectorstores import VectorStore
@@ -22,7 +20,6 @@ import time
 class RAGMode(Enum):
     """Enumeration of supported RAG execution modes."""
     BASELINE = "baseline"
-    AGENTIC = "agentic"
     HYBRID = "hybrid"
     RERANKING = "reranking"
 
@@ -52,7 +49,6 @@ class RAGWorkflow(BaseRAGInterface):
     
     Supports:
     - Baseline: Standard retrieval + generation
-    - Agentic: Tool-calling agents with decision-making
     - Hybrid: Semantic + lexical search combination
     - Reranking: Document reranking for improved relevance
     """
@@ -111,31 +107,6 @@ class RAGWorkflow(BaseRAGInterface):
         
         # Create baseline RAG chain
         self.rag_chain = self._create_rag_chain()
-        
-        # Initialize agentic components
-        self.agent_executor: Optional[AgentExecutor] = None
-        self._init_agent()
-
-    def _init_agent(self) -> None:
-        """Initialize agent executor for agentic mode."""
-        retrieval_tool = create_retriever_tool(
-            self.retrieval,
-            "retrieve_relevant_context",
-            "Search and return information required to answer the question accurately",
-        )
-        
-        agent_prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful assistant. Use the retrieve_relevant_context tool to get relevant information to answer questions accurately."),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}"),
-        ])
-        
-        agent = create_tool_calling_agent(self.llm, [retrieval_tool], agent_prompt)
-        self.agent_executor = AgentExecutor(
-            agent=agent,
-            tools=[retrieval_tool],
-            verbose=False,
-        )
 
     def _create_rag_prompt(self) -> ChatPromptTemplate:
         """Create RAG prompt template for baseline mode."""
@@ -235,7 +206,7 @@ Answer:"""
         Args:
             query: Question to answer
             ground_truth: Optional ground truth for evaluation
-            mode: Execution mode (BASELINE, AGENTIC, HYBRID, RERANKING)
+            mode: Execution mode (BASELINE, HYBRID, RERANKING)
             use_reranker: Whether to apply reranking (overrides mode if True)
             rerank_top_k: Number of documents to keep after reranking
             verbose: Enable verbose logging
@@ -250,9 +221,7 @@ Answer:"""
         callback_handler = self._get_callback_handler(verbose)
         
         # Route to appropriate mode handler
-        if mode == RAGMode.AGENTIC:
-            return self._get_agentic_answer(query, ground_truth, callback_handler)
-        elif mode in (RAGMode.RERANKING, RAGMode.HYBRID):
+        if mode in (RAGMode.RERANKING, RAGMode.HYBRID):
             return self._get_reranked_answer(query, ground_truth, rerank_top_k, callback_handler)
         else:  # BASELINE
             return self._get_baseline_answer(query, ground_truth, callback_handler)
@@ -309,32 +278,6 @@ Answer:"""
         return EvaluationDatasetItem(
             question=query,
             answer=response,
-            contexts=contexts,
-            ground_truth=ground_truth,
-            metadata=metadata
-        )
-
-    def _get_agentic_answer(
-        self,
-        query: str,
-        ground_truth: Optional[GroundTruth],
-        callback_handler: RAGCallbackHandler
-    ) -> EvaluationDatasetItem:
-        """Execute agentic RAG with tool-calling agent."""
-        if not self.agent_executor:
-            raise RuntimeError("Agent executor not initialized")
-        
-        response = self.agent_executor.invoke(
-            {"input": query}, 
-            config={"callbacks": [callback_handler]}
-        )
-        
-        contexts = callback_handler.retrieved_contexts
-        metadata = self._generate_eval_metadata(callback_handler)
-        
-        return EvaluationDatasetItem(
-            question=query,
-            answer=response.get("output"),
             contexts=contexts,
             ground_truth=ground_truth,
             metadata=metadata

@@ -400,3 +400,58 @@ class RAGEvaluator:
     def available_metrics(self) -> list[str]:
         """List all available metric names"""
         return list(self.metric_names)
+    
+    def evaluate_demo(
+        self,
+        eval_dataset: EvaluationDataset,
+        *,
+        return_tensor: bool = True,
+        metrics: Optional[dict[str, BaseMetric]] = None,
+        normalize: bool = False,
+        normalization_strategy: NormalizationStrategy = "sum",
+        **kwargs
+    ) -> dict[str, MetricResult] | torch.Tensor:
+        """
+        Demo evaluation function that returns random objectives.
+        
+        Args:
+            eval_dataset: Dataset to evaluate (unused in demo)
+            return_tensor: Return as tensor
+            metrics: Specific metrics (defaults to all)
+            normalize: Apply normalization
+            normalization_strategy: Normalization method
+            
+        Returns:
+            Random tensor simulating objective values for MOBO
+        """
+        import torch
+        
+        # Determine number of objectives
+        metrics_to_eval = metrics or self._metrics
+        n_objectives = len(metrics_to_eval)
+        
+        if return_tensor:
+            # FIX: Ensure dtype=torch.float64 for BoTorch consistency
+            random_objectives = torch.rand(n_objectives, dtype=torch.float64)
+            
+            # Apply negation for metrics that need it
+            for i, (name, metric) in enumerate(metrics_to_eval.items()):
+                if metric.negate:
+                    random_objectives[i] = -random_objectives[i]
+            
+            return random_objectives
+
+        results: dict[str, MetricResult] = {}
+        for name, metric in metrics_to_eval.items():
+            value = torch.rand(1, dtype=torch.float64).item()
+            if metric.negate:
+                value = -value
+            
+            results[name] = MetricResult(
+                name=name,
+                value=value,
+                category=metric.category,
+                error=None
+            )
+        
+        return results
